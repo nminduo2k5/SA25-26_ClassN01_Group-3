@@ -1,0 +1,39 @@
+# Core Framework
+streamlit
+fastapi
+uvicorn
+
+# CrewAI Integration
+crewai[tools]
+crewai-tools
+
+# AI & ML
+google-generativeai
+openai
+numpy
+pandas
+scikit-learn
+tensorflow
+keras
+
+# Data Sources
+vnstock
+yfinance
+requests
+aiohttp
+
+# Visualization
+plotly
+matplotlib
+seaborn
+
+# Utilities
+python-dotenv
+python-multipart
+beautifulsoup4
+lxml
+
+# Optional (for advanced features)
+# asyncio-mqtt  # Uncomment if using MQTT
+# redis          # Uncomment if using Redis cache
+# celery         # Uncomment if using background tasks
