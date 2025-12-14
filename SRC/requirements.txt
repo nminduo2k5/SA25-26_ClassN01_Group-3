@@ -10,6 +10,7 @@ crewai-tools
 # AI & ML
 google-generativeai
 openai
+litellm
 numpy
 pandas
 scikit-learn

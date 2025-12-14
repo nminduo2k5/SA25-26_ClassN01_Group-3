@@ -9,6 +9,7 @@ from src.data.vn_stock_api import VNStockAPI
 from src.ui.styles import load_custom_css
 from src.data.sqlite_manager import SQLiteManager
 from chart_functions import create_stock_prediction_chart, create_technical_indicators_chart, create_volume_analysis_chart
+from single_arch_display import display_single_architecture_result
 import json
 # Cấu hình trang chuyên nghiệp
 st.set_page_config(
@@ -162,8 +163,7 @@ def display_price_prediction(pred, investment_amount=10000000, risk_tolerance=50
     method = pred.get('primary_method', pred.get('method_used', pred.get('method', 'Technical Analysis')))
     if 'LSTM' in method:
         st.success(f"🧠 {method} - Enhanced with Neural Network")
-        if pred.get('lstm_confidence'):
-            st.info(f"📊 LSTM Confidence: {pred['lstm_confidence']:.1f}%")
+      
         if pred.get('model_performance'):
             perf = pred['model_performance']
             confidence = perf.get('confidence', 0)
@@ -214,23 +214,40 @@ def display_price_prediction(pred, investment_amount=10000000, risk_tolerance=50
     # Multi-timeframe predictions from agent
     predictions = pred.get('predictions', {})
     
-    # Get predictions from correct time periods based on price_predictor structure
+    # Get predictions from updated time periods
     target_1d = predictions.get('short_term', {}).get('1_days', {}).get('price', current_price)
-    target_1w = predictions.get('short_term', {}).get('7_days', {}).get('price', current_price) 
-    target_1m = predictions.get('medium_term', {}).get('30_days', {}).get('price', current_price)
+    target_3d = predictions.get('short_term', {}).get('3_days', {}).get('price', current_price) 
+    target_2w = predictions.get('medium_term', {}).get('14_days', {}).get('price', current_price)
+    target_2m = predictions.get('long_term', {}).get('60_days', {}).get('price', current_price)
+
+    # Additional common horizons used elsewhere in the UI
+    target_1w = predictions.get('short_term', {}).get('7_days', {}).get('price', 
+                predictions.get('medium_term', {}).get('7_days', {}).get('price', current_price))
+    target_1m = predictions.get('medium_term', {}).get('30_days', {}).get('price', 
+                predictions.get('long_term', {}).get('30_days', {}).get('price', current_price))
     target_3m = predictions.get('long_term', {}).get('90_days', {}).get('price', current_price)
     
     # If specific periods not found, try alternative periods
     if target_1d == current_price:
-        target_1d = predictions.get('short_term', {}).get('3_days', {}).get('price', current_price)
+        target_1d = predictions.get('short_term', {}).get('2_days', {}).get('price', current_price)
+    if target_3d == current_price:
+        target_3d = predictions.get('short_term', {}).get('2_days', {}).get('price', current_price)
+    if target_2w == current_price:
+        target_2w = predictions.get('medium_term', {}).get('10_days', {}).get('price', current_price)
+        if target_2w == current_price:
+            target_2w = predictions.get('medium_term', {}).get('7_days', {}).get('price', current_price)
+    if target_2m == current_price:
+        target_2m = predictions.get('long_term', {}).get('45_days', {}).get('price', current_price)
+
+    # Fallback attempts for the added horizons
     if target_1w == current_price:
-        target_1w = predictions.get('short_term', {}).get('7_days', {}).get('price', current_price)
+        target_1w = predictions.get('medium_term', {}).get('10_days', {}).get('price', 
+                    predictions.get('medium_term', {}).get('7_days', {}).get('price', current_price))
     if target_1m == current_price:
-        target_1m = predictions.get('medium_term', {}).get('14_days', {}).get('price', current_price)
-        if target_1m == current_price:
-            target_1m = predictions.get('medium_term', {}).get('60_days', {}).get('price', current_price)
+        target_1m = predictions.get('long_term', {}).get('45_days', {}).get('price', 
+                    predictions.get('medium_term', {}).get('30_days', {}).get('price', current_price))
     if target_3m == current_price:
-        target_3m = predictions.get('long_term', {}).get('180_days', {}).get('price', current_price)
+        target_3m = predictions.get('long_term', {}).get('60_days', {}).get('price', current_price)
     
     colors = {'bullish': '#28a745', 'bearish': '#dc3545', 'neutral': '#ffc107'}
     icons = {'bullish': '📈', 'bearish': '📉', 'neutral': '📊'}
@@ -239,18 +256,7 @@ def display_price_prediction(pred, investment_amount=10000000, risk_tolerance=50
     prediction_method = "🧠 Dự đoán bởi DuongPro" if prediction_based else "📊 Phân tích kỹ thuật"
     
     # Information display header with LSTM enhancement
-    header_color = "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)" if 'LSTM' not in method else "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"
-    header_icon = "🧠" if 'LSTM' in method else "📊"
-    
-    st.markdown(f"""
-    <div style="background: {header_color}; color: white; padding: 20px; border-radius: 12px; margin: 10px 0; box-shadow: 0 10px 30px rgba(0,0,0,0.1);">
-        <div style="text-align: center;">
-            <h3 style="margin: 0; font-size: 24px;">{header_icon} DỰ ĐOÁN GIÁ - {prediction_method}</h3>
-            <p style="margin: 5px 0; font-size: 14px;">Độ tin cậy: {confidence:.1f}%</p>
-            {'<p style="margin: 5px 0; font-size: 12px; opacity: 0.9;">🧠 Neural Network Enhanced</p>' if 'LSTM' in method else ''}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+   
     
     # Prediction tabs with weekend awareness
     st.markdown("### 📊 Dự đoán giá theo thời gian")
@@ -277,9 +283,9 @@ def display_price_prediction(pred, investment_amount=10000000, risk_tolerance=50
         return f"{VN_WEEKDAYS[d.weekday()]}, {d.strftime(date_fmt)}"
     
     date_1d = format_vn_date(analysis_dt + timedelta(days=1))
-    date_1w = format_vn_date(analysis_dt + timedelta(days=7))
-    date_1m = format_vn_date(analysis_dt + timedelta(days=30))
-    date_3m = format_vn_date(analysis_dt + timedelta(days=90))
+    date_3d = format_vn_date(analysis_dt + timedelta(days=3))
+    date_2w = format_vn_date(analysis_dt + timedelta(days=14))
+    date_2m = format_vn_date(analysis_dt + timedelta(days=60))
     
     # Helper: weekend-adjusted price (keep weekend date, use Friday's price)
     def weekend_adjusted_price(days: int, base_price: float, bucket: str) -> float:
@@ -296,7 +302,11 @@ def display_price_prediction(pred, investment_amount=10000000, risk_tolerance=50
     
     # Weekend-aware display targets for top cards
     target_1d_disp = weekend_adjusted_price(1, target_1d, 'short_term')
-    target_1w_disp = weekend_adjusted_price(7, target_1w, 'short_term')
+    target_3d_disp = weekend_adjusted_price(3, target_3d, 'short_term')
+    target_2w_disp = weekend_adjusted_price(14, target_2w, 'medium_term')
+    target_2m_disp = weekend_adjusted_price(60, target_2m, 'long_term')
+    # Display variants for additional horizons
+    target_1w_disp = weekend_adjusted_price(7, target_1w, 'medium_term')
     target_1m_disp = weekend_adjusted_price(30, target_1m, 'medium_term')
     target_3m_disp = weekend_adjusted_price(90, target_3m, 'long_term')
     
@@ -329,18 +339,18 @@ def display_price_prediction(pred, investment_amount=10000000, risk_tolerance=50
     
     # Calculate changes with enhanced validation and consistency checks
     change_1d = safe_calculate_change(target_1d_disp, current_price)
-    change_1w = safe_calculate_change(target_1w_disp, current_price)
-    change_1m = safe_calculate_change(target_1m_disp, current_price)
-    change_3m = safe_calculate_change(target_3m_disp, current_price)
+    change_3d = safe_calculate_change(target_3d_disp, current_price)
+    change_2w = safe_calculate_change(target_2w_disp, current_price)
+    change_2m = safe_calculate_change(target_2m_disp, current_price)
     
     # CONSISTENCY CHECK: Ensure changes make sense relative to each other
-    changes = [change_1d, change_1w, change_1m, change_3m]
+    changes = [change_1d, change_3d, change_2w, change_2m]
     if all(abs(c) < 0.1 for c in changes):  # All changes too small
         print("🔧 All changes too small, applying progressive scaling")
         change_1d = 0.6 if target_1d >= current_price else -0.6
-        change_1w = change_1d * 1.8
-        change_1m = change_1d * 3.2
-        change_3m = change_1d * 5.5
+        change_3d = change_1d * 1.5
+        change_2w = change_1d * 2.8
+        change_2m = change_1d * 4.2
     
     
     
@@ -378,9 +388,9 @@ def display_price_prediction(pred, investment_amount=10000000, risk_tolerance=50
     
     # Create tabs for different timeframes with LSTM indicators
     if 'LSTM' in method:
-        tab1, tab2, tab3 = st.tabs(["🧠 Ngắn hạn (LSTM)", "🧠 Trung hạn (LSTM)", "🧠 Dài hạn (LSTM)"])
+        tab1, tab2, tab3 = st.tabs(["🧠 Ngắn hạn (3 ngày)", "🧠 Trung hạn (14 ngày)", "🧠 Dài hạn (60 ngày)"])
     else:
-        tab1, tab2, tab3 = st.tabs(["📊 Ngắn hạn", "📈 Trung hạn", "📉 Dài hạn"])
+        tab1, tab2, tab3 = st.tabs(["📊 Ngắn hạn (3 ngày)", "📈 Trung hạn (14 ngày)", "📉 Dài hạn (60 ngày)"])
     
     # Use LSTM/AI predictions if available, otherwise calculate trend-aware growth rates
     method_info = pred.get('primary_method', pred.get('method_used', 'Technical Analysis'))
@@ -441,7 +451,7 @@ def display_price_prediction(pred, investment_amount=10000000, risk_tolerance=50
         with tab1:
             short_data = []
             last_trading_price = current_price
-            for i in range(1, 8):
+            for i in range(1, 4):  # 3 days
                 date = datetime.now() + timedelta(days=i)
                 if date.weekday() >= 5:  # Weekend
                     # Use last trading day's price for weekend (no change on weekends)
@@ -451,12 +461,12 @@ def display_price_prediction(pred, investment_amount=10000000, risk_tolerance=50
                     price = get_lstm_interpolated_price(i)
                     last_trading_price = price  # Update last trading price
                 short_data.append([format_prediction_date(date), f"{price:,.2f} VND"])
-            render_prediction_table(short_data, "📊 Dự đoán Ngắn hạn (7 ngày) - LSTM")
+            render_prediction_table(short_data, "📊 Dự đoán Ngắn hạn (3 ngày) - LSTM")
         
         with tab2:
             medium_data = []
             last_trading_price = current_price
-            for i in range(1, 31):
+            for i in range(1, 15):
                 date = datetime.now() + timedelta(days=i)
                 if date.weekday() >= 5:  # Weekend
                     # Use last trading day's price for weekend
@@ -466,12 +476,12 @@ def display_price_prediction(pred, investment_amount=10000000, risk_tolerance=50
                     price = get_lstm_interpolated_price(i)
                     last_trading_price = price  # Update last trading price
                 medium_data.append([format_prediction_date(date), f"{price:,.2f} VND"])
-            render_prediction_table(medium_data, "📈 Dự đoán Trung hạn (30 ngày) - LSTM")
+            render_prediction_table(medium_data, "📈 Dự đoán Trung hạn (14 ngày) - LSTM")
         
         with tab3:
             long_data = []
             last_trading_price = current_price
-            for i in range(1, 91):
+            for i in range(1, 61):
                 date = datetime.now() + timedelta(days=i)
                 if date.weekday() >= 5:  # Weekend
                     # Use last trading day's price for weekend
@@ -481,7 +491,7 @@ def display_price_prediction(pred, investment_amount=10000000, risk_tolerance=50
                     price = get_lstm_interpolated_price(i)
                     last_trading_price = price  # Update last trading price
                 long_data.append([format_prediction_date(date), f"{price:,.2f} VND"])
-            render_prediction_table(long_data, "📉 Dự đoán Dài hạn (90 ngày) - LSTM")
+            render_prediction_table(long_data, "📉 Dự đoán Dài hạn (60 ngày) - LSTM")
     
     else:
         # Fallback to traditional trend-aware growth rates
@@ -494,35 +504,35 @@ def display_price_prediction(pred, investment_amount=10000000, risk_tolerance=50
         with tab1:
             short_data = []
             last_trading_price = current_price
-            for i in range(1, 8):
+            for i in range(1, 4):
                 date = datetime.now() + timedelta(days=i)
                 price = get_trading_price(date, current_price, growth_rate_1w, i, last_trading_price)
                 if date.weekday() < 5:  # Update last trading price only on weekdays
                     last_trading_price = price
                 short_data.append([format_prediction_date(date), f"{price:,.2f} VND"])
-            render_prediction_table(short_data, "📊 Dự đoán Ngắn hạn (7 ngày)")
+            render_prediction_table(short_data, "📊 Dự đoán Ngắn hạn (3 ngày)")
         
         with tab2:
             medium_data = []
             last_trading_price = current_price
-            for i in range(1, 31):
+            for i in range(1, 15):
                 date = datetime.now() + timedelta(days=i)
                 price = get_trading_price(date, current_price, growth_rate_1m, i, last_trading_price)
                 if date.weekday() < 5:  # Update last trading price only on weekdays
                     last_trading_price = price
                 medium_data.append([format_prediction_date(date), f"{price:,.2f} VND"])
-            render_prediction_table(medium_data, "📈 Dự đoán Trung hạn (30 ngày)")
+            render_prediction_table(medium_data, "📈 Dự đoán Trung hạn (14 ngày)")
         
         with tab3:
             long_data = []
             last_trading_price = current_price
-            for i in range(1, 91):
+            for i in range(1, 61):
                 date = datetime.now() + timedelta(days=i)
                 price = get_trading_price(date, current_price, growth_rate_3m, i, last_trading_price)
                 if date.weekday() < 5:  # Update last trading price only on weekdays
                     last_trading_price = price
                 long_data.append([format_prediction_date(date), f"{price:,.2f} VND"])
-            render_prediction_table(long_data, "📉 Dự đoán Dài hạn (90 ngày)")
+            render_prediction_table(long_data, "📉 Dự đoán Dài hạn (60 ngày)")
     
     # Enhanced detailed prediction metrics with trend analysis
     col1, col2, col3, col4 = st.columns(4)
@@ -1508,12 +1518,50 @@ with st.sidebar:
     # Load saved preferences
     saved_prefs = main_agent.db.get_user_preferences()
     
+    # AI Model Selection
+    ai_model_options = {
+        "gemini": "🤖 Google Gemini (Miễn phí)",
+        "openai": "🚀 OpenAI GPT (Trả phí)",
+        "llama": "🦙 Llama 3.1 (Local - Miễn phí)",
+        "auto": "⚡ Tự động (Ưu tiên Gemini → OpenAI → Llama)"
+    }
+    
+    # Get saved AI model preference
+    saved_ai_model = saved_prefs.get('preferred_ai_model', 'auto') if saved_prefs else 'auto'
+    default_ai_index = list(ai_model_options.keys()).index(saved_ai_model) if saved_ai_model in ai_model_options else 0
+    
+    selected_ai_model = st.selectbox(
+        "🎯 Chọn AI Model",
+        options=list(ai_model_options.keys()),
+        format_func=lambda x: ai_model_options[x],
+        index=default_ai_index,
+        help="Chọn AI model để sử dụng cho phân tích"
+    )
+    
+    # Show model info
+    if selected_ai_model == "gemini":
+        st.info("🤖 **Gemini AI**: Miễn phí, 15 req/phút, tối ưu cho tiếng Việt")
+    elif selected_ai_model == "openai":
+        st.info("🚀 **OpenAI GPT**: Trả phí theo sử dụng, chất lượng cao")
+    elif selected_ai_model == "llama":
+        st.info("🦙 **Llama 3.1**: Chạy local, hoàn toàn miễn phí, bảo mật dữ liệu")
+    else:
+        st.info("⚡ **Tự động**: Ưu tiên Gemini → OpenAI → Llama (local)")
+    
     gemini_key = st.text_input(
         "Khóa API Gemini",
         type="password",
         value=saved_prefs.get('gemini_api_key', '') if saved_prefs else '',
         placeholder="Nhập Google Gemini API key của bạn...",
         help="Lấy API key miễn phí tại: https://aistudio.google.com/apikey"
+    )
+    
+    openai_key = st.text_input(
+        "Khóa API OpenAI",
+        type="password",
+        value=saved_prefs.get('openai_api_key', '') if saved_prefs else '',
+        placeholder="Nhập OpenAI API key của bạn...",
+        help="Lấy API key tại: https://platform.openai.com/api-keys"
     )
     
     serper_key = st.text_input(
@@ -1523,56 +1571,73 @@ with st.sidebar:
         help="Lấy API key tại: https://serper.dev/api-key"
     )
     
-
-    st.info("ℹ️ Gemini AI - Miễn phí với API key của bạn (15 requests/phút)")
-    
-    # Show current status
+    # Show AI model status
     if main_agent.gemini_agent:
         try:
-            model_info = main_agent.gemini_agent.get_model_info()
-            if model_info['is_active']:
-                st.success(f"✅ Đã cấu hình: {model_info['current_model']}")
+            available_models = list(main_agent.gemini_agent.available_models.keys())
+            if available_models:
+                models_str = ", ".join(available_models)
+                st.success(f"✅ AI Models: {models_str}")
+                
+                # Show selected model preference
+                if selected_ai_model != "auto":
+                    if selected_ai_model in available_models:
+                        st.success(f"🎯 Đang sử dụng: {selected_ai_model.upper()}")
+                    else:
+                        st.warning(f"⚠️ {selected_ai_model.upper()} chưa được cấu hình")
+                else:
+                    primary_model = "Gemini" if "gemini" in available_models else "OpenAI" if "openai" in available_models else "Llama" if "llama" in available_models else "None"
+                    st.info(f"⚡ Tự động: Đang dùng {primary_model}")
             else:
-                st.error("❌ Gemini có lỗi")
-        except:
-            st.error("❌ Gemini có lỗi")
+                st.warning("⚠️ Chưa có AI models")
+        except Exception as e:
+            st.warning(f"⚠️ Lỗi kiểm tra AI models: {e}")
     else:
-        st.warning("⚠️ Chưa cấu hình Gemini")
+        st.warning("⚠️ Chưa cấu hình AI models")
     
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🔧 Cài đặt Gemini", use_container_width=True, type="primary"):
-            if gemini_key:
-                with st.spinner("🔄 Đang kiểm tra API key..."):
-                    result = main_agent.set_gemini_api_key(gemini_key)
+        if st.button("🔧 Cài đặt AI Models", use_container_width=True, type="primary"):
+            if gemini_key or openai_key:
+                with st.spinner("🔄 Đang cấu hình AI models..."):
+                    result = main_agent.set_gemini_api_key(gemini_key, openai_key, selected_ai_model)
                     if result:
-                        # Save preferences to database
+                        # Save preferences to database including model preference
                         main_agent.db.save_user_preferences({
                             'gemini_api_key': gemini_key,
-                            'serper_api_key': serper_key
+                            'openai_api_key': openai_key,
+                            'serper_api_key': serper_key,
+                            'preferred_ai_model': selected_ai_model
                         })
                         # Update session state
                         st.session_state.main_agent = main_agent
-                        st.success('✅ Cấu hình Gemini thành công!')
+                        st.success('✅ Cấu hình AI models thành công!')
                         st.rerun()
                     else:
-                        st.error('❌ Khóa API không hợp lệ hoặc không thể kết nối!')
-                        st.info('💡 Kiểm tra lại API key tại: https://makersuite.google.com/app/apikey')
+                        st.error('❌ Không thể cấu hình AI models!')
+                        st.info('💡 Kiểm tra lại API keys')
             else:
-                st.warning('⚠️ Vui lòng nhập khóa API!')
+                st.warning('⚠️ Vui lòng nhập ít nhất 1 khóa API!')
     
     with col2:
-        if st.button("🚀 Cài đặt CrewAI", use_container_width=True):
-            if gemini_key:
-                if main_agent.set_crewai_keys(gemini_key, serper_key):
+        if st.button("🚀 Cài đặt AI + CrewAI", use_container_width=True):
+            if gemini_key or openai_key:
+                if main_agent.set_crewai_keys(gemini_key, serper_key, openai_key, selected_ai_model):
+                    # Save preferences to database including model preference
+                    main_agent.db.save_user_preferences({
+                        'gemini_api_key': gemini_key,
+                        'openai_api_key': openai_key,
+                        'serper_api_key': serper_key,
+                        'preferred_ai_model': selected_ai_model
+                    })
                     # Update session state
                     st.session_state.main_agent = main_agent
-                    st.success('✅ Cấu hình tất cả AI thành công!')
+                    st.success('✅ Cấu hình tất cả AI + CrewAI thành công!')
                     st.rerun()
                 else:
                     st.warning('⚠️ Một số AI không khả dụng')
             else:
-                st.error('❌ Cần khóa API Gemini!')
+                st.error('❌ Cần ít nhất 1 khóa API (Gemini hoặc OpenAI)!')
     
     # Force refresh button
     if st.button("🔄 Làm mới dữ liệu", use_container_width=True, help="Xóa cache và tải lại symbols từ CrewAI"):
@@ -1582,20 +1647,30 @@ with st.sidebar:
     
     st.divider()
     
-    # Bootstrap AI Agents Status
+    # Check AI models status
     ai_models_status = []
     ai_model_active = False
     
-    if main_agent.gemini_agent:
-        try:
-            model_info = main_agent.gemini_agent.get_model_info()
-            if model_info['is_active'] and model_info['current_model']:
-                ai_models_status.append(f"Gemini ({model_info['current_model']})")
-                ai_model_active = True
-            else:
-                ai_models_status.append("Gemini (Lỗi)")
-        except Exception as e:
-            ai_models_status.append("Gemini (Lỗi)")
+    if main_agent.gemini_agent and main_agent.gemini_agent.available_models:
+        available_models = list(main_agent.gemini_agent.available_models.keys())
+        
+        for model in available_models:
+            if model == "gemini":
+                ai_models_status.append("Gemini")
+            elif model == "openai":
+                ai_models_status.append("OpenAI")
+            elif model == "llama":
+                ai_models_status.append("Llama")
+            ai_model_active = True
+        
+        # Show current preference
+        if hasattr(main_agent.gemini_agent, 'preferred_model'):
+            preferred = main_agent.gemini_agent.preferred_model
+            if preferred != "auto":
+                ai_models_status.append(f"[Ưu tiên: {preferred.upper()}]")
+    
+    if not ai_models_status:
+        ai_models_status.append("Chưa cấu hình")
     
     agents_status = [
         {"name": "PricePredictor", "icon": "bi-graph-up", "status": "active"},
@@ -1798,6 +1873,25 @@ with tab1:
     
    
     
+    # Architecture selection
+    st.subheader("🏗️ Chọn kiến trúc Multi-Agent")
+    
+    architecture_options = {
+        "all": "🎯 Tất cả 4 kiến trúc (Meta-Ensemble)",
+        "ensemble": "🔗 Ensemble Architecture (Weighted Voting)",
+        "hierarchical": "🏛️ Hierarchical Architecture (Master-Slave)", 
+        "round_robin": "🔄 Round Robin Architecture (Sequential)",
+        "agent_driven": "🤖 Agent-Driven Architecture (Autonomous)"
+    }
+    
+    selected_architecture = st.selectbox(
+        "Kiến trúc phân tích:",
+        options=list(architecture_options.keys()),
+        format_func=lambda x: architecture_options[x],
+        index=0,
+        key="architecture_selection"
+    )
+    
     # Action buttons in horizontal layout
     col1, col2, col3, col4 = st.columns(4)
     
@@ -1821,7 +1915,7 @@ with tab1:
     # Handle button actions
     if comprehensive_btn:
         with results_container:
-            with st.spinner("🚀 6 AI Agents đang phân tích..."):
+            with st.spinner("🚀 6 AI Agents + 4 Architectures đang phân tích..."):
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 # Pass investment profile parameters to comprehensive analysis
@@ -1854,10 +1948,66 @@ with tab1:
                 globals()['time_horizon'] = time_horizon
                 globals()['investment_amount'] = investment_amount
                 
-                # Display comprehensive results with real data
+                # Display comprehensive results with real data + multi-architecture
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 loop.run_until_complete(display_comprehensive_analysis(result, symbol, time_horizon, risk_tolerance))
+                
+                # Display architecture predictions based on selection
+                if selected_architecture == "all" and result.get('multi_architecture_prediction'):
+                    st.markdown("---")
+                    st.markdown("### 🏢 Dự đoán đa kiến trúc (4 Architectures)")
+                    
+                    arch_result = result['multi_architecture_prediction']
+                    if arch_result.get('error'):
+                        st.error(f"❌ {arch_result['error']}")
+                    else:
+                        # Display final predictions from meta-ensemble
+                        final_preds = arch_result.get('final_predictions', {})
+                        
+                        if final_preds:
+                            col1, col2, col3 = st.columns(3)
+                            
+                            for i, (timeframe, pred) in enumerate(final_preds.items()):
+                                with [col1, col2, col3][i % 3]:
+                                    if pred.get('price'):
+                                        st.metric(
+                                            f"{timeframe.replace('_', ' ').title()}",
+                                            f"{pred['price']:,.2f} VND",
+                                            f"{pred.get('confidence', 0):.1f}% confidence"
+                                        )
+                        
+                        # Show architecture breakdown
+                        with st.expander("🏢 Chi tiết 4 kiến trúc", expanded=False):
+                            arch_results = arch_result.get('architecture_results', {})
+                            
+                            for arch_name, arch_data in arch_results.items():
+                                if 'error' not in arch_data:
+                                    st.subheader(f"🔧 {arch_name.title()} Architecture")
+                                    
+                                    arch_preds = arch_data.get('predictions', {})
+                                    if arch_preds:
+                                        cols = st.columns(len(arch_preds))
+                                        for j, (tf, pred) in enumerate(arch_preds.items()):
+                                            with cols[j]:
+                                                st.metric(
+                                                    tf.replace('_', ' ').title(),
+                                                    f"{pred.get('price', 0):,.2f}",
+                                                    f"{pred.get('confidence', 0):.1f}%"
+                                                )
+                                    
+                                    # Show method info
+                                    method = arch_data.get('architecture', arch_name)
+                                    st.caption(f"📊 Method: {method}")
+                                else:
+                                    st.error(f"❌ {arch_name}: {arch_data['error']}")
+                        
+                        # Show meta-ensemble info
+                        meta_method = arch_result.get('meta_method', 'multi_architecture_ensemble')
+                        st.success(f"✅ Kết quả cuối từ {meta_method}")
+                
+                elif selected_architecture != "all":
+                    display_single_architecture_result(st, main_agent, selected_architecture, architecture_options, symbol)
     elif price_btn:
         with results_container:
             with st.spinner("📈 Đang dự đoán giá..."):

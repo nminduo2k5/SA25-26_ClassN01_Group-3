@@ -516,20 +516,24 @@ class VNStockAPI:
             'timestamp': datetime.now().isoformat()
         }
     
-    def set_crewai_keys(self, gemini_api_key: str, serper_api_key: str = None):
-        """Update CrewAI API keys"""
+    def set_crewai_keys(self, gemini_api_key: str, serper_api_key: str = None, openai_api_key: str = None, preferred_model: str = "auto"):
+        """Update CrewAI API keys with OpenAI support and model preference"""
         if CREWAI_INTEGRATION:
-            # Force recreate collector with new keys
-            from .crewai_collector import _collector_instance
-            import src.data.crewai_collector as crewai_module
-            crewai_module._collector_instance = None
-            self.crewai_collector = get_crewai_collector(gemini_api_key, serper_api_key)
-            
-            # Clear cache to force fresh data
-            self.clear_symbols_cache()
-            
-            logger.info(f"✅ CrewAI keys updated - Enabled: {self.crewai_collector.enabled}")
-            return self.crewai_collector.enabled
+            try:
+                # Force recreate collector with new keys and preference
+                from .crewai_collector import _collector_instance
+                import src.data.crewai_collector as crewai_module
+                crewai_module._collector_instance = None
+                self.crewai_collector = get_crewai_collector(gemini_api_key, serper_api_key, openai_api_key, preferred_model)
+                
+                # Clear cache to force fresh data
+                self.clear_symbols_cache()
+                
+                logger.info(f"✅ CrewAI keys updated - Enabled: {self.crewai_collector.enabled} (Preference: {preferred_model})")
+                return self.crewai_collector.enabled
+            except Exception as e:
+                logger.error(f"❌ Failed to update CrewAI keys: {e}")
+                return False
         return False
     
     def _is_cache_valid(self, cache_key: str) -> bool:

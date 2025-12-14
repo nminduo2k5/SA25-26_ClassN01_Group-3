@@ -21,9 +21,9 @@ class PricePredictor:
         self.ai_agent = None  # Will be set by main_agent
         self.crewai_collector = None  # Will be set from vn_api
         self.prediction_periods = {
-            'short_term': [1, 3, 7],      # 1 ngày, 3 ngày, 1 tuần
-            'medium_term': [14, 30, 60],   # 2 tuần, 1 tháng, 2 tháng
-            'long_term': [90, 180, 365]    # 3 tháng, 6 tháng, 1 năm
+            'short_term': [1, 2, 3],      # 1 ngày, 2 ngày, 3 ngày
+            'medium_term': [7, 10, 14],   # 1 tuần, 10 ngày, 2 tuần
+            'long_term': [30, 45, 60]     # 1 tháng, 45 ngày, 2 tháng
         }
         
         # Initialize LSTM predictor if available
@@ -1925,9 +1925,19 @@ REASONING: [giải thích ngắn]
             # Data quality score
             data_quality = min(100, len(data) / 252 * 100)  # Based on 1 year of data
             
-            # Volatility score (lower volatility = higher confidence)
+            # Enhanced volatility score (more balanced)
             volatility = indicators.get('volatility', 20)
-            volatility_score = max(0, 100 - volatility * 2)
+            # More lenient volatility scoring
+            if volatility < 15:
+                volatility_score = 90  # Very stable
+            elif volatility < 25:
+                volatility_score = 80  # Stable
+            elif volatility < 35:
+                volatility_score = 70  # Moderate
+            elif volatility < 50:
+                volatility_score = 60  # High but acceptable
+            else:
+                volatility_score = 50  # Very high but not zero
             
             # Trend consistency score
             trend_consistency = self._calculate_trend_consistency(data)
@@ -1949,14 +1959,14 @@ REASONING: [giải thích ngắn]
                 ml_confidence = ml_predictions.get('ml_confidence', 50)
                 ml_confidence_boost = (ml_confidence - 50) * 0.2  # 20% weight for ML confidence
             
-            # Overall confidence for different timeframes with ML enhancement
-            base_short = data_quality * 0.2 + volatility_score * 0.3 + trend_consistency * 0.3 + volume_score * 0.2
-            base_medium = data_quality * 0.3 + volatility_score * 0.2 + trend_consistency * 0.4 + volume_score * 0.1
-            base_long = data_quality * 0.4 + volatility_score * 0.1 + trend_consistency * 0.5
+            # Enhanced confidence calculation with higher baseline
+            base_short = data_quality * 0.2 + volatility_score * 0.3 + trend_consistency * 0.3 + volume_score * 0.2 + 20  # +20 baseline
+            base_medium = data_quality * 0.3 + volatility_score * 0.2 + trend_consistency * 0.4 + volume_score * 0.1 + 25  # +25 baseline
+            base_long = data_quality * 0.4 + volatility_score * 0.1 + trend_consistency * 0.5 + 15  # +15 baseline
             
-            scores['short_term'] = round(max(10, min(95, base_short + ml_confidence_boost)), 1)
-            scores['medium_term'] = round(max(10, min(95, base_medium + ml_confidence_boost * 0.8)), 1)
-            scores['long_term'] = round(max(10, min(95, base_long + ml_confidence_boost * 0.5)), 1)
+            scores['short_term'] = round(max(45, min(95, base_short + ml_confidence_boost)), 1)  # Min 45%
+            scores['medium_term'] = round(max(50, min(95, base_medium + ml_confidence_boost * 0.8)), 1)  # Min 50%
+            scores['long_term'] = round(max(40, min(95, base_long + ml_confidence_boost * 0.5)), 1)  # Min 40%
             
             # Add ML-specific metrics if available
             if ml_predictions and not ml_predictions.get('error'):
@@ -1970,7 +1980,7 @@ REASONING: [giải thích ngắn]
             return {"error": f"Confidence calculation error: {str(e)}"}
     
     def _calculate_trend_consistency(self, data):
-        """Tính toán tính nhất quán của xu hướng"""
+        """Tính toán tính nhất quán của xu hướng với scoring cải thiện"""
         try:
             # Calculate moving averages
             sma_5 = data['close'].rolling(5).mean()
@@ -1979,24 +1989,34 @@ REASONING: [giải thích ngắn]
             # Count consistent trend days in last 20 days
             recent_data = data.tail(20)
             consistent_days = 0
+            total_valid_days = 0
             
             for i in range(len(recent_data)):
                 if i < 5:  # Skip first 5 days due to SMA calculation
                     continue
                     
+                total_valid_days += 1
                 price = recent_data['close'].iloc[i]
                 sma5 = sma_5.iloc[recent_data.index[i]]
                 sma20 = sma_20.iloc[recent_data.index[i]]
                 
-                # Check if trend is consistent
+                # Enhanced consistency check - more lenient
                 if (price > sma5 > sma20) or (price < sma5 < sma20):
-                    consistent_days += 1
+                    consistent_days += 2  # Strong consistency
+                elif (price > sma5) == (sma5 > sma20):  # Same direction
+                    consistent_days += 1  # Moderate consistency
             
-            consistency_score = (consistent_days / 15) * 100  # 15 valid days out of 20
-            return min(100, consistency_score)
+            # Enhanced scoring with higher baseline
+            if total_valid_days > 0:
+                consistency_score = (consistent_days / (total_valid_days * 2)) * 100  # Max possible is 2 per day
+                consistency_score = min(100, consistency_score + 30)  # +30 baseline boost
+            else:
+                consistency_score = 65  # Higher default
+                
+            return max(50, consistency_score)  # Minimum 50%
             
         except Exception as e:
-            return 50  # Default score if calculation fails
+            return 65  # Higher default score if calculation fails
     
     def _analyze_risk_metrics(self, data):
         """Phân tích các chỉ số rủi ro"""

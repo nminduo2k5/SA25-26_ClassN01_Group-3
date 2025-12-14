@@ -9,6 +9,8 @@ from gemini_agent import UnifiedAIAgent
 from src.data.vn_stock_api import VNStockAPI
 from src.data.sqlite_manager import SQLiteManager
 from src.utils.error_handler import handle_async_errors, AgentErrorHandler, validate_symbol
+from Architecture.architecture_manager import ArchitectureManager
+from Architecture.single_architecture_runner import SingleArchitectureRunner
 from fastapi.concurrency import run_in_threadpool
 import asyncio
 import logging
@@ -28,12 +30,25 @@ class MainAgent:
         self.risk_expert = RiskExpert(vn_api)
         self.international_news = InternationalMarketNews()
         
+        # Initialize Architecture Manager
+        agents_dict = {
+            'price_predictor': self.price_predictor,
+            'lstm_predictor': self.price_predictor,
+            'investment_expert': self.investment_expert,
+            'risk_expert': self.risk_expert,
+            'ticker_news': self.ticker_news,
+            'market_news': self.market_news
+        }
+        self.architecture_manager = ArchitectureManager(agents_dict)
+        self.single_architecture_runner = SingleArchitectureRunner(agents_dict)
+        
         # Initialize Unified AI Agent with user-provided API key
         self.gemini_agent = None
         if gemini_api_key:
             try:
                 self.gemini_agent = UnifiedAIAgent(
-                    gemini_api_key=gemini_api_key
+                    gemini_api_key=gemini_api_key,
+                    preferred_model="auto"
                 )
                 # Test connection only if models are available
                 if self.gemini_agent.available_models:
@@ -80,68 +95,89 @@ class MainAgent:
             if hasattr(self.international_news, 'set_ai_agent'):
                 self.international_news.set_ai_agent(self.gemini_agent)
     
-    def set_gemini_api_key(self, api_key: str):
-        """Set or update Gemini API key"""
+    def set_gemini_api_key(self, gemini_api_key: str = None, openai_api_key: str = None, preferred_model: str = "auto"):
+        """Set or update AI API keys with model preference"""
         try:
-            # Create new agent
-            self.gemini_agent = UnifiedAIAgent(gemini_api_key=api_key)
+            # Get existing keys if not provided
+            if self.gemini_agent:
+                current_gemini = getattr(self.gemini_agent, 'gemini_api_key', None)
+                current_openai = getattr(self.gemini_agent, 'openai_api_key', None)
+                gemini_api_key = gemini_api_key or current_gemini
+                openai_api_key = openai_api_key or current_openai
+            
+            # Create new agent with both keys and preference
+            self.gemini_agent = UnifiedAIAgent(
+                gemini_api_key=gemini_api_key, 
+                openai_api_key=openai_api_key,
+                preferred_model=preferred_model
+            )
             
             # Test connection only if models are available
             if self.gemini_agent.available_models:
                 connection_results = self.gemini_agent.test_connection()
                 model_info = self.gemini_agent.get_model_info()
+                available_models = list(self.gemini_agent.available_models.keys())
                 
                 if model_info['is_active']:
-                    print(f"✅ Gemini API key updated successfully ({model_info['current_model']})")
+                    models_str = ", ".join(available_models)
+                    print(f"✅ AI Models updated: {models_str} (Preference: {preferred_model})")
                     self._integrate_ai_with_agents()
                     return True
                 else:
-                    print("⚠️ Gemini models not available, running in offline mode")
+                    print("⚠️ AI models not available, running in offline mode")
                     self._integrate_ai_with_agents()
                     return True  # Still return True for offline mode
             else:
-                print("📴 No Gemini models available, system will use offline mode")
+                print("📴 No AI models available, system will use offline mode")
                 self._integrate_ai_with_agents()
                 return True  # Still return True for offline mode
         except Exception as e:
-            print(f"⚠️ Gemini setup issue: {e} - Using offline mode")
+            print(f"⚠️ AI setup issue: {e} - Using offline mode")
             # Create offline agent
             try:
-                self.gemini_agent = UnifiedAIAgent()
+                self.gemini_agent = UnifiedAIAgent(preferred_model=preferred_model)
                 self._integrate_ai_with_agents()
                 return True
-            except:
+            except Exception as e2:
+                print(f"⚠️ Offline agent creation failed: {e2}")
                 self.gemini_agent = None
-                return False
+                # Still return True to indicate the method completed
+                return True
     
 
     
-    def set_crewai_keys(self, gemini_api_key: str, serper_api_key: str = None):
-        """Set CrewAI API keys for real news collection with Gemini AI"""
+    def set_crewai_keys(self, gemini_api_key: str, serper_api_key: str = None, openai_api_key: str = None, preferred_model: str = "auto"):
+        """Set CrewAI API keys for real news collection with AI models"""
         try:
-            # Update AI agents (only Gemini)
-            if gemini_api_key:
+            # Update AI agents with preference
+            if gemini_api_key or openai_api_key:
                 if self.gemini_agent:
-                    # Update existing agent with new key
+                    # Update existing agent with new keys and preference
                     current_gemini = getattr(self.gemini_agent, 'gemini_api_key', None)
+                    current_openai = getattr(self.gemini_agent, 'openai_api_key', None)
+                    current_preference = getattr(self.gemini_agent, 'preferred_model', 'auto')
                     
                     self.gemini_agent = UnifiedAIAgent(
-                        gemini_api_key=gemini_api_key or current_gemini
+                        gemini_api_key=gemini_api_key or current_gemini,
+                        openai_api_key=openai_api_key or current_openai,
+                        preferred_model=preferred_model or current_preference
                     )
                 else:
                     # Create new agent
                     self.gemini_agent = UnifiedAIAgent(
-                        gemini_api_key=gemini_api_key
+                        gemini_api_key=gemini_api_key,
+                        openai_api_key=openai_api_key,
+                        preferred_model=preferred_model
                     )
                 
                 connection_results = self.gemini_agent.test_connection()
                 active_models = [model for model, status in connection_results.items() if status]
                 model_info = self.gemini_agent.get_model_info()
-                print(f"✅ AI Models updated: {', '.join(active_models)} ({model_info.get('current_model', 'Unknown')})")
+                print(f"✅ AI Models updated: {', '.join(active_models)} (Preference: {preferred_model})")
                 self._integrate_ai_with_agents()
             
-            # Update VN API CrewAI integration
-            success = self.vn_api.set_crewai_keys(gemini_api_key, serper_api_key)
+            # Update VN API CrewAI integration with OpenAI support and model preference
+            success = self.vn_api.set_crewai_keys(gemini_api_key, serper_api_key, openai_api_key, preferred_model)
             
             if success:
                 print("✅ CrewAI integration updated successfully")
@@ -188,6 +224,10 @@ class MainAgent:
             # Các tác vụ chung cho cả hai thị trường với investment profile
             tasks['price_prediction'] = run_in_threadpool(self._safe_get_price_prediction, symbol)
             tasks['risk_assessment'] = run_in_threadpool(self._safe_get_risk_assessment, symbol, risk_tolerance, time_horizon, investment_amount)
+            
+            # Architecture tasks - always run all architectures for comprehensive analysis
+            tasks['multi_architecture_prediction'] = run_in_threadpool(self._safe_get_multi_architecture_prediction, symbol, {})
+            tasks['architecture_comparison'] = run_in_threadpool(self._safe_get_architecture_comparison, symbol, {})
             
             # Add investment analysis for VN stocks too
             if market_type == 'Vietnam':
@@ -488,6 +528,30 @@ class MainAgent:
     def display_price_chart(self, price_history, symbol):
         """Display price chart - delegate to stock_info"""
         return self.stock_info.display_price_chart(price_history, symbol)
+    
+    def _safe_get_multi_architecture_prediction(self, symbol: str, data: dict):
+        """Safely get multi-architecture prediction"""
+        try:
+            return self.architecture_manager.predict_all_architectures(symbol, data)
+        except Exception as e:
+            logger.error(f"Multi-architecture prediction error for {symbol}: {e}")
+            return {"error": f"Lỗi dự đoán đa kiến trúc: {str(e)}"}
+    
+    def _safe_get_architecture_comparison(self, symbol: str, data: dict):
+        """Safely get architecture comparison"""
+        try:
+            return self.architecture_manager.get_architecture_comparison(symbol, data)
+        except Exception as e:
+            logger.error(f"Architecture comparison error for {symbol}: {e}")
+            return {"error": f"Lỗi so sánh kiến trúc: {str(e)}"}
+    
+    def _safe_get_single_architecture_prediction(self, architecture_name: str, symbol: str, data: dict):
+        """Safely get single architecture prediction"""
+        try:
+            return self.single_architecture_runner.run_single_architecture(architecture_name, symbol, data)
+        except Exception as e:
+            logger.error(f"Single architecture {architecture_name} error for {symbol}: {e}")
+            return {"error": f"Lỗi kiến trúc {architecture_name}: {str(e)}"}
     
     def _get_risk_profile_name(self, risk_tolerance: int) -> str:
         """Get risk profile name from tolerance level"""

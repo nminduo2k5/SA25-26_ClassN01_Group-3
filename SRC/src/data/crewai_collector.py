@@ -46,20 +46,22 @@ logger = logging.getLogger(__name__)
 class CrewAIDataCollector:
     """CrewAI-based collector for real market data and news"""
     
-    def __init__(self, gemini_api_key: str = None, serper_api_key: str = None):
+    def __init__(self, gemini_api_key: str = None, serper_api_key: str = None, openai_api_key: str = None, preferred_model: str = "auto"):
         if not CREWAI_AVAILABLE:
             self.enabled = False
             return
             
         self.gemini_api_key = gemini_api_key or os.getenv("GOOGLE_API_KEY")
         self.serper_api_key = serper_api_key or os.getenv("SERPER_API_KEY")
+        self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
+        self.preferred_model = preferred_model  # "gemini", "openai", or "auto"
         
-        if not self.gemini_api_key:
-            logger.warning("⚠️ No Gemini API key provided")
+        if not self.gemini_api_key and not self.openai_api_key:
+            logger.info("📴 No AI API keys provided - CrewAI will be disabled")
             self.enabled = False
             return
             
-        # Enable with just Gemini key, Serper is optional
+        # Enable with either Gemini or OpenAI key, Serper is optional
         self.enabled = True
         self._setup_agents()
         
@@ -76,13 +78,82 @@ class CrewAIDataCollector:
     def _setup_agents(self):
         """Setup CrewAI agents and tools"""
         try:
-            # Setup LLM
-            self.llm = LLM(
-                model="gemini/gemini-2.0-flash-001",
-                api_key=self.gemini_api_key,
-                temperature=0,
-                max_tokens=2048
-            )
+            # Setup LLM based on user preference
+            if self.preferred_model == "openai" and self.openai_api_key:
+                try:
+                    self.llm = LLM(
+                        model="openai/gpt-4o",
+                        api_key=self.openai_api_key,
+                        temperature=0,
+                        max_tokens=2048
+                    )
+                    logger.info("✅ CrewAI using OpenAI GPT-4o (user preference)")
+                except Exception as e:
+                    logger.warning(f"OpenAI LLM failed, falling back to Gemini: {e}")
+                    if self.gemini_api_key:
+                        self.llm = LLM(
+                            model="gemini/gemini-2.0-flash-001",
+                            api_key=self.gemini_api_key,
+                            temperature=0,
+                            max_tokens=2048
+                        )
+                        logger.info("✅ CrewAI using Gemini 2.0 Flash (fallback)")
+                    else:
+                        raise Exception("No fallback AI model available")
+            elif self.preferred_model == "gemini" and self.gemini_api_key:
+                try:
+                    self.llm = LLM(
+                        model="gemini/gemini-2.0-flash-001",
+                        api_key=self.gemini_api_key,
+                        temperature=0,
+                        max_tokens=2048
+                    )
+                    logger.info("✅ CrewAI using Gemini 2.0 Flash (user preference)")
+                except Exception as e:
+                    logger.warning(f"Gemini LLM failed, falling back to OpenAI: {e}")
+                    if self.openai_api_key:
+                        self.llm = LLM(
+                            model="openai/gpt-4o",
+                            api_key=self.openai_api_key,
+                            temperature=0,
+                            max_tokens=2048
+                        )
+                        logger.info("✅ CrewAI using OpenAI GPT-4o (fallback)")
+                    else:
+                        raise Exception("No fallback AI model available")
+            else:
+                # Auto mode - prefer Gemini for Vietnamese content, fallback to OpenAI
+                if self.gemini_api_key:
+                    try:
+                        self.llm = LLM(
+                            model="gemini/gemini-2.0-flash-001",
+                            api_key=self.gemini_api_key,
+                            temperature=0,
+                            max_tokens=2048
+                        )
+                        logger.info("✅ CrewAI using Gemini 2.0 Flash (auto mode)")
+                    except Exception as e:
+                        logger.warning(f"Gemini LLM failed, trying OpenAI: {e}")
+                        if self.openai_api_key:
+                            self.llm = LLM(
+                                model="openai/gpt-4o",
+                                api_key=self.openai_api_key,
+                                temperature=0,
+                                max_tokens=2048
+                            )
+                            logger.info("✅ CrewAI using OpenAI GPT-4o (auto fallback)")
+                        else:
+                            raise Exception("No AI models available")
+                elif self.openai_api_key:
+                    self.llm = LLM(
+                        model="openai/gpt-4o",
+                        api_key=self.openai_api_key,
+                        temperature=0,
+                        max_tokens=2048
+                    )
+                    logger.info("✅ CrewAI using OpenAI GPT-4o (auto mode - no Gemini)")
+                else:
+                    raise Exception("No AI API keys provided")
             
             # Setup tools if available
             tools = []
@@ -556,12 +627,13 @@ class CrewAIDataCollector:
 # Singleton instance
 _collector_instance = None
 
-def get_crewai_collector(gemini_api_key: str = None, serper_api_key: str = None) -> CrewAIDataCollector:
-    """Get singleton CrewAI collector instance"""
+def get_crewai_collector(gemini_api_key: str = None, serper_api_key: str = None, openai_api_key: str = None, preferred_model: str = "auto") -> CrewAIDataCollector:
+    """Get singleton CrewAI collector instance with model preference"""
     global _collector_instance
     
-    # Always recreate if new API key provided
-    if gemini_api_key or _collector_instance is None:
-        _collector_instance = CrewAIDataCollector(gemini_api_key, serper_api_key)
+    # Always recreate if new API key provided or preference changed
+    if (gemini_api_key or openai_api_key or _collector_instance is None or 
+        (hasattr(_collector_instance, 'preferred_model') and _collector_instance.preferred_model != preferred_model)):
+        _collector_instance = CrewAIDataCollector(gemini_api_key, serper_api_key, openai_api_key, preferred_model)
     
     return _collector_instance
