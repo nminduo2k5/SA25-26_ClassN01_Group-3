@@ -1,0 +1,10 @@
+# Ultra minimal for super fast build
+streamlit
+fastapi
+uvicorn
+requests
+pandas
+numpy
+plotly
+python-dotenv
+beautifulsoup4

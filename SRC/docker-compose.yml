@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend Service
+  api:
+    build: .
+    container_name: vnstock-api
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./logs:/app/logs
+      - ./duong_trading.db:/app/duong_trading.db
+    command: python api.py
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - vnstock-network
+
+  # Streamlit Frontend Service
+  streamlit:
+    build: .
+    container_name: vnstock-streamlit
+    ports:
+      - "8501:8501"
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./logs:/app/logs
+      - ./duong_trading.db:/app/duong_trading.db
+    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - vnstock-network
+
+  # Nginx Reverse Proxy (Optional)
+  nginx:
+    image: nginx:alpine
+    container_name: vnstock-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - api
+      - streamlit
+    restart: unless-stopped
+    networks:
+      - vnstock-network
+
+networks:
+  vnstock-network:
+    driver: bridge
+
+volumes:
+  vnstock-data:
+    driver: local

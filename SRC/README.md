@@ -434,3 +434,33 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 *"Đầu tư thông minh với sức mạnh của AI và Machine Learning!"* 💪
 </div>
 
+# Development
+docker-start.bat start dev
+
+# Production  
+docker-start.bat start prod
+
+# Dừng tất cả
+docker-start.bat stop
+
+
+
+# Xem trạng thái
+docker-start.bat status
+
+# Xem logs
+docker-start.bat logs
+
+# Dừng tất cả
+docker-start.bat stop
+
+# Restart
+docker-start.bat restart dev
+
+Mở browser: http://localhost:8501
+
+Hoặc kiểm tra:
+
+🔗 API: http://localhost:8000
+
+📚 API Docs: http://localhost:8000/api/docs

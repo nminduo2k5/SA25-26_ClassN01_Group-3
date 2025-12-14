@@ -19,7 +19,10 @@ class LSTMPricePredictor:
         self.name = "LSTM Price Predictor Agent"
         self.vn_api = vn_api
         self.ai_agent = None
-        self.scaler = MinMaxScaler(feature_range=(0, 1))
+        if KERAS_AVAILABLE:
+            self.scaler = MinMaxScaler(feature_range=(0, 1))
+        else:
+            self.scaler = None
         self.model = None
         self.look_back = 365  # Use 365 days for better performance (modern approach)
         self.model_cache = {}  # Cache trained models

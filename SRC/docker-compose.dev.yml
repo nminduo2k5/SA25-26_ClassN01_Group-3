@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # Development API Service
+  api-dev:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: vnstock-api-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - DEBUG=1
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    command: python -m uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+    networks:
+      - vnstock-dev-network
+
+  # Development Streamlit Service
+  streamlit-dev:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: vnstock-streamlit-dev
+    ports:
+      - "8501:8501"
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0 --server.runOnSave=true
+    restart: unless-stopped
+    depends_on:
+      - api-dev
+    networks:
+      - vnstock-dev-network
+
+networks:
+  vnstock-dev-network:
+    driver: bridge

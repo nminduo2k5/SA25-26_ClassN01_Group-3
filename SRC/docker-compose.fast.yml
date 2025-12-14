@@ -1,0 +1,38 @@
+services:
+  api-fast:
+    build: 
+      context: .
+      dockerfile: Dockerfile.fast
+    container_name: vnstock-api-fast
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - .:/app
+    command: python -m uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - vnstock-network
+
+  streamlit-fast:
+    build: 
+      context: .
+      dockerfile: Dockerfile.fast
+    container_name: vnstock-streamlit-fast
+    ports:
+      - "8501:8501"
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - .:/app
+    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+    depends_on:
+      - api-fast
+    networks:
+      - vnstock-network
+
+networks:
+  vnstock-network:
+    driver: bridge
