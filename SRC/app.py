@@ -1538,6 +1538,12 @@ with st.sidebar:
         help="Chọn AI model để sử dụng cho phân tích"
     )
     
+    # Force use only selected model (no fallback)
+    if selected_ai_model != "auto":
+        st.info(f"🎯 **Chế độ cố định**: Chỉ sử dụng {selected_ai_model.upper()}, không fallback")
+    else:
+        st.info("⚡ **Chế độ tự động**: Fallback Gemini → OpenAI → Llama")
+    
     # Show model info
     if selected_ai_model == "gemini":
         st.info("🤖 **Gemini AI**: Miễn phí, 15 req/phút, tối ưu cho tiếng Việt")
@@ -1576,18 +1582,21 @@ with st.sidebar:
         try:
             available_models = list(main_agent.gemini_agent.available_models.keys())
             if available_models:
-                models_str = ", ".join(available_models)
+                models_str = ", ".join([m.upper() for m in available_models])
                 st.success(f"✅ AI Models: {models_str}")
                 
-                # Show selected model preference
+                # Show selected model preference with fixed mode indicator
                 if selected_ai_model != "auto":
                     if selected_ai_model in available_models:
-                        st.success(f"🎯 Đang sử dụng: {selected_ai_model.upper()}")
+                        st.success(f"🎯 Đang sử dụng: {selected_ai_model.upper()} (CỐ ĐỊNH)")
                     else:
                         st.warning(f"⚠️ {selected_ai_model.upper()} chưa được cấu hình")
                 else:
-                    primary_model = "Gemini" if "gemini" in available_models else "OpenAI" if "openai" in available_models else "Llama" if "llama" in available_models else "None"
-                    st.info(f"⚡ Tự động: Đang dùng {primary_model}")
+                    try:
+                        primary_model = main_agent.gemini_agent.select_best_model("general_query")
+                        st.info(f"⚡ Tự động: Đang dùng {primary_model.upper()} (có fallback)")
+                    except:
+                        st.info("⚡ Tự động: Chưa có model khả dụng")
             else:
                 st.warning("⚠️ Chưa có AI models")
         except Exception as e:
@@ -1612,6 +1621,14 @@ with st.sidebar:
                         # Update session state
                         st.session_state.main_agent = main_agent
                         st.success('✅ Cấu hình AI models thành công!')
+                        
+                        # Show configured models and selected preference
+                        if main_agent.gemini_agent and main_agent.gemini_agent.available_models:
+                            configured_models = list(main_agent.gemini_agent.available_models.keys())
+                            st.info(f"🤖 Models đã cấu hình: {', '.join([m.upper() for m in configured_models])}")
+                            if selected_ai_model != "auto":
+                                st.success(f"🎯 Đã chọn sử dụng: {selected_ai_model.upper()} (cố định)")
+                        
                         st.rerun()
                     else:
                         st.error('❌ Không thể cấu hình AI models!')
@@ -1633,6 +1650,14 @@ with st.sidebar:
                     # Update session state
                     st.session_state.main_agent = main_agent
                     st.success('✅ Cấu hình tất cả AI + CrewAI thành công!')
+                    
+                    # Show configured models and selected preference
+                    if main_agent.gemini_agent and main_agent.gemini_agent.available_models:
+                        configured_models = list(main_agent.gemini_agent.available_models.keys())
+                        st.info(f"🤖 Models đã cấu hình: {', '.join([m.upper() for m in configured_models])}")
+                        if selected_ai_model != "auto":
+                            st.success(f"🎯 Đã chọn sử dụng: {selected_ai_model.upper()} (cố định)")
+                    
                     st.rerun()
                 else:
                     st.warning('⚠️ Một số AI không khả dụng')
@@ -1663,11 +1688,17 @@ with st.sidebar:
                 ai_models_status.append("Llama")
             ai_model_active = True
         
-        # Show current preference
+        # Show current preference and active model
         if hasattr(main_agent.gemini_agent, 'preferred_model'):
             preferred = main_agent.gemini_agent.preferred_model
             if preferred != "auto":
                 ai_models_status.append(f"[Ưu tiên: {preferred.upper()}]")
+            else:
+                try:
+                    current_model = main_agent.gemini_agent.select_best_model("general_query")
+                    ai_models_status.append(f"[Auto: {current_model.upper()}]")
+                except:
+                    ai_models_status.append("[Auto: None]")
     
     if not ai_models_status:
         ai_models_status.append("Chưa cấu hình")
@@ -1678,7 +1709,7 @@ with st.sidebar:
         {"name": "MarketNews", "icon": "bi-globe", "status": "active"},
         {"name": "InvestmentExpert", "icon": "bi-briefcase", "status": "active"},
         {"name": "RiskExpert", "icon": "bi-shield-check", "status": "active"},
-        {"name": f"AI Models ({', '.join(ai_models_status) if ai_models_status else 'None'})", "icon": "bi-robot", "status": "active" if ai_model_active else "inactive"},
+        {"name": f"AI Models ({', '.join(ai_models_status)})", "icon": "bi-robot", "status": "active" if ai_model_active else "inactive"},
         {"name": "CrewAI", "icon": "bi-people", "status": "active" if main_agent.vn_api.crewai_collector and main_agent.vn_api.crewai_collector.enabled else "inactive"}
     ]
     
@@ -2088,13 +2119,28 @@ with tab2:
             margin: 1rem 0;
         ">
             <h4 style="color: #d63031; margin-bottom: 0.5rem;">⚠️ Cần cấu hình AI</h4>
-            <p style="color: #2d3436; margin-bottom: 0.5rem;">Vui lòng cấu hình khóa API Gemini trong thanh bên để sử dụng cố vấn AI</p>
-            <p style="color: #636e72; font-size: 0.9rem; margin: 0;">💡 Gemini AI hoàn toàn miễn phí với API key cá nhân</p>
+            <p style="color: #2d3436; margin-bottom: 0.5rem;">Vui lòng cấu hình ít nhất 1 trong 3 AI models trong thanh bên:</p>
+            <ul style="color: #2d3436; margin: 0.5rem 0;">
+                <li>🤖 <strong>Gemini AI</strong> - Miễn phí, tốt cho tiếng Việt</li>
+                <li>🚀 <strong>OpenAI GPT</strong> - Trả phí, chất lượng cao</li>
+                <li>🦙 <strong>Llama 3.1</strong> - Local, hoàn toàn miễn phí</li>
+            </ul>
+            <p style="color: #636e72; font-size: 0.9rem; margin: 0;">💡 Hệ thống sẽ tự động chọn AI model tốt nhất</p>
         </div>
         """, unsafe_allow_html=True)
     else:
         # Show AI status with beautiful card
-        st.markdown("""
+        available_models = list(main_agent.gemini_agent.available_models.keys())
+        models_display = ", ".join([m.upper() for m in available_models])
+        
+        # Get current model being used
+        try:
+            current_model = main_agent.gemini_agent.select_best_model("general_query")
+            current_display = f"Đang dùng: {current_model.upper()}"
+        except:
+            current_display = "Chưa có model khả dụng"
+        
+        st.markdown(f"""
         <div style="
             background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
             padding: 1rem;
@@ -2104,7 +2150,8 @@ with tab2:
             text-align: center;
         ">
             <h4 style="color: #00b894; margin: 0;">🤖 AI DuongPro đang hoạt động</h4>
-            <p style="color: #2d3436; margin: 0.3rem 0 0 0; font-size: 0.9rem;">Sẵn sàng phân tích và tư vấn đầu tư cho bạn</p>
+            <p style="color: #2d3436; margin: 0.3rem 0; font-size: 0.9rem;">Models: {models_display}</p>
+            <p style="color: #636e72; margin: 0; font-size: 0.8rem;">{current_display}</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -2122,6 +2169,24 @@ with tab2:
             ]
             for i, q in enumerate(sample_questions, 1):
                 st.markdown(f"**{i}.** {q}")
+            
+            # Show available AI models info
+            if main_agent.gemini_agent and main_agent.gemini_agent.available_models:
+                available_models = list(main_agent.gemini_agent.available_models.keys())
+                st.info(f"🤖 **AI Models khả dụng:** {', '.join([m.upper() for m in available_models])}")
+                
+                # Show model capabilities
+                model_info = []
+                for model in available_models:
+                    if model == "gemini":
+                        model_info.append("🤖 **Gemini**: Tốt cho tiếng Việt, phân tích tài chính")
+                    elif model == "openai":
+                        model_info.append("🚀 **OpenAI**: Chất lượng cao, lý luận sâu")
+                    elif model == "llama":
+                        model_info.append("🦙 **Llama**: Xử lý local, bảo mật dữ liệu")
+                
+                for info in model_info:
+                    st.caption(info)
         
         user_question = st.text_area(
             "Câu hỏi của bạn:",
@@ -2130,6 +2195,20 @@ with tab2:
             key="chat_input"
         )
         
+        # Show current AI model being used with fixed mode indicator
+        if main_agent.gemini_agent and main_agent.gemini_agent.available_models:
+            try:
+                if selected_ai_model != "auto":
+                    if selected_ai_model in main_agent.gemini_agent.available_models:
+                        st.success(f"🎯 **Đang sử dụng:** {selected_ai_model.upper()} AI (CỐ ĐỊNH)")
+                    else:
+                        st.error(f"❌ **Lỗi:** {selected_ai_model.upper()} chưa được cấu hình")
+                else:
+                    current_model = main_agent.gemini_agent.select_best_model("general_query")
+                    st.info(f"⚡ **Tự động:** {current_model.upper()} AI (có fallback)")
+            except:
+                st.warning("⚠️ Không có AI model khả dụng")
+        
         # Enhanced button with better styling
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
@@ -2137,22 +2216,36 @@ with tab2:
                 "🚀 Hỏi AI Chuyên Gia DuongPro", 
                 type="primary", 
                 use_container_width=True,
-                help="Click để nhận phân tích chuyên sâu từ AI DuongPro"
+                help="Click để nhận phân tích chuyên sâu từ AI DuongPro (Tự động chọn AI model tốt nhất)"
             )
         
         if ask_button:
             if user_question.strip():
-                # Enhanced loading with progress
-                with st.spinner("🧠 AI DuongPro đang phân tích câu hỏi của bạn..."):
+                # Enhanced loading with progress and timeout info
+                with st.spinner("🧠 AI đang phân tích... (Llama local có thể mất 10-30s)"):
                     try:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                        response = loop.run_until_complete(main_agent.process_query(user_question, symbol))
+                        # Force use selected model if not auto
+                        if selected_ai_model != "auto":
+                            response = loop.run_until_complete(main_agent.process_query(user_question, symbol, force_model=selected_ai_model))
+                        else:
+                            response = loop.run_until_complete(main_agent.process_query(user_question, symbol))
                         loop.close()
                         
                         if response.get('expert_advice'):
+                            # Get the model used for this response
+                            model_used = "Unknown"
+                            if "🤖 **AI Model:**" in response['expert_advice']:
+                                model_line = response['expert_advice'].split("🤖 **AI Model:**")[1].split("\n")[0].strip()
+                                model_used = model_line
+                            elif selected_ai_model != "auto":
+                                model_used = f"{selected_ai_model.upper()} (Cố định)"
+                            else:
+                                model_used = "Auto Selection"
+                            
                             # Enhanced response display with beautiful formatting
-                            st.markdown("""
+                            st.markdown(f"""
                             <div style="
                                 background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
                                 padding: 1rem;
@@ -2160,7 +2253,8 @@ with tab2:
                                 margin: 1.5rem 0 1rem 0;
                                 text-align: center;
                             ">
-                                <h3 style="color: white; margin: 0; font-size: 1.5rem;">🎓 Phân tích chuyên gia từ AI DuongPro</h3>
+                                <h3 style="color: white; margin: 0; font-size: 1.5rem;">🎓 Phân tích từ AI DuongPro</h3>
+                                <p style="color: white; margin: 0.5rem 0 0 0; font-size: 0.9rem; opacity: 0.9;">Powered by: {model_used}</p>
                             </div>
                             """, unsafe_allow_html=True)
                             
@@ -2237,6 +2331,11 @@ with tab2:
                             # Add timestamp and disclaimer
                             from datetime import datetime
                             current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                            
+                            # Get available models for display
+                            available_models = list(main_agent.gemini_agent.available_models.keys())
+                            models_display = ", ".join([m.upper() for m in available_models])
+                            
                             st.markdown(f"""
                             <div style="
                                 background: #f8f9fa;
@@ -2247,7 +2346,7 @@ with tab2:
                                 border: 1px solid #e9ecef;
                             ">
                                 <p style="color: #6c757d; margin: 0; font-size: 0.9rem;">
-                                    🕐 Phân tích lúc: {current_time} | 🤖 Powered by Gemini AI<br>
+                                    🕐 Phân tích lúc: {current_time} | 🤖 AI Models: {models_display}<br>
                                     ⚠️ <strong>Lưu ý:</strong> Đây là thông tin tham khảo, không phải lời khuyên đầu tư tuyệt đối
                                 </p>
                             </div>

@@ -312,7 +312,7 @@ class MainAgent:
             return {"error": f"Lỗi nghiêm trọng khi lấy tổng quan thị trường: {str(e)}"}
     
     @handle_async_errors(default_return={"error": "Lỗi xử lý truy vấn"})
-    async def process_query(self, query: str, symbol: str = ""):
+    async def process_query(self, query: str, symbol: str = "", force_model: str = None):
         """Xử lý truy vấn từ người dùng với AI response"""
         if not query or not query.strip():
             return {"error": "Vui lòng nhập câu hỏi"}
@@ -320,7 +320,7 @@ class MainAgent:
         query = query.strip()
         symbol = symbol.strip().upper() if symbol else ""
         
-        logger.info(f"Processing query: '{query}' for symbol: '{symbol}'")
+        logger.info(f"Processing query: '{query}' for symbol: '{symbol}' with force_model: {force_model}")
         
         try:
             # Get comprehensive data for AI analysis
@@ -364,22 +364,29 @@ class MainAgent:
                         "ticker_news": results[3] if not isinstance(results[3], Exception) else None
                     }
             
-            # Use Gemini to generate expert advice (works in both online and offline mode)
+            # Use AI to generate expert advice with force_model support
             if self.gemini_agent:
                 try:
-                    gemini_response = await run_in_threadpool(
-                        self.gemini_agent.generate_expert_advice, query, symbol, data
-                    )
+                    if force_model:
+                        # Use forced model if specified
+                        gemini_response = await run_in_threadpool(
+                            self.gemini_agent.generate_general_response, query, force_model
+                        )
+                    else:
+                        # Use default method
+                        gemini_response = await run_in_threadpool(
+                            self.gemini_agent.generate_expert_advice, query, symbol, data
+                        )
                 except Exception as e:
-                    logger.error(f"Gemini error: {e}")
+                    logger.error(f"AI error: {e}")
                     gemini_response = {
-                        "expert_advice": f"Lỗi Gemini AI: {str(e)}",
+                        "expert_advice": f"Lỗi AI: {str(e)}",
                         "recommendations": ["Thử lại sau", "Kiểm tra API key"]
                     }
             else:
                 gemini_response = {
-                    "expert_advice": "Gemini AI chưa được khởi tạo. Vui lòng nhập API key.",
-                    "recommendations": ["Nhập Google API key để sử dụng Gemini AI"]
+                    "expert_advice": "AI chưa được khởi tạo. Vui lòng nhập API key.",
+                    "recommendations": ["Nhập API key để sử dụng AI"]
                 }
 
             response = {
@@ -389,10 +396,11 @@ class MainAgent:
                 "expert_advice": gemini_response.get("expert_advice", "Không có phân tích từ chuyên gia."),
                 "recommendations": gemini_response.get("recommendations", []),
                 "data": data,
+                "force_model": force_model,
                 "timestamp": asyncio.get_event_loop().time()
             }
             
-            logger.info(f"Successfully processed query for {symbol}")
+            logger.info(f"Successfully processed query for {symbol} with model: {force_model or 'auto'}")
             return response
             
         except Exception as e:
