@@ -42,30 +42,34 @@ class MainAgent:
         self.architecture_manager = ArchitectureManager(agents_dict)
         self.single_architecture_runner = SingleArchitectureRunner(agents_dict)
         
-        # Initialize Unified AI Agent with user-provided API key
-        self.gemini_agent = None
-        if gemini_api_key:
+        # Initialize Unified AI Agent - always create to check for Llama
+        try:
+            self.gemini_agent = UnifiedAIAgent(
+                gemini_api_key=gemini_api_key,
+                preferred_model="auto"
+            )
+            
+            # Test connection and show status
+            if self.gemini_agent.available_models:
+                connection_results = self.gemini_agent.test_connection()
+                active_models = [model for model, status in connection_results.items() if status]
+                model_info = self.gemini_agent.get_model_info()
+                print(f"✅ AI Models initialized: {', '.join(active_models)}")
+            else:
+                print("⚠️ No AI models available, checking Llama...")
+                # Still might have Llama available
+                
+        except Exception as e:
+            print(f"⚠️ AI initialization failed: {e}")
+            # Still create agent to check for Llama
             try:
-                self.gemini_agent = UnifiedAIAgent(
-                    gemini_api_key=gemini_api_key,
-                    preferred_model="auto"
-                )
-                # Test connection only if models are available
+                self.gemini_agent = UnifiedAIAgent()
                 if self.gemini_agent.available_models:
-                    connection_results = self.gemini_agent.test_connection()
-                    active_models = [model for model, status in connection_results.items() if status]
-                    model_info = self.gemini_agent.get_model_info()
-                    print(f"✅ AI Models initialized: {', '.join(active_models)} ({model_info.get('current_model', 'Unknown')})")
+                    print(f"📋 Local models available: {list(self.gemini_agent.available_models.keys())}")
                 else:
-                    print("⚠️ No AI models available, system will run in offline mode")
-            except Exception as e:
-                print(f"⚠️ AI initialization failed: {e}")
-                # Still create agent for offline mode
-                try:
-                    self.gemini_agent = UnifiedAIAgent()
                     print("📴 Running in offline mode")
-                except:
-                    self.gemini_agent = None
+            except:
+                self.gemini_agent = None
         
         # Update VN API with CrewAI keys
         if gemini_api_key or serper_api_key:
@@ -133,15 +137,18 @@ class MainAgent:
                 return True  # Still return True for offline mode
         except Exception as e:
             print(f"⚠️ AI setup issue: {e} - Using offline mode")
-            # Create offline agent
+            # Create agent (may have Llama even without API keys)
             try:
-                self.gemini_agent = UnifiedAIAgent(preferred_model=preferred_model)
+                self.gemini_agent = UnifiedAIAgent(
+                    gemini_api_key=gemini_api_key,
+                    openai_api_key=openai_api_key,
+                    preferred_model=preferred_model
+                )
                 self._integrate_ai_with_agents()
                 return True
             except Exception as e2:
-                print(f"⚠️ Offline agent creation failed: {e2}")
+                print(f"⚠️ Agent creation failed: {e2}")
                 self.gemini_agent = None
-                # Still return True to indicate the method completed
                 return True
     
 

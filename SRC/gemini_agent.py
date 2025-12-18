@@ -1,337 +1,62 @@
-import google.generativeai as genai
-from openai import OpenAI
-import os
 import logging
 from typing import Dict, Any, Optional, List
 import asyncio
-import json
-import time
 from datetime import datetime
-
-try:
-    from litellm import completion
-    LITELLM_AVAILABLE = True
-except ImportError:
-    LITELLM_AVAILABLE = False
-    completion = None
+from llm.unified_llm import UnifiedLLM
 
 logger = logging.getLogger(__name__)
+
 class UnifiedAIAgent:
     def __init__(self, gemini_api_key: str = None, openai_api_key: str = None, preferred_model: str = "auto"):
         """
-        Initialize AI Agent with Gemini AI, OpenAI, and Llama
+        Initialize AI Agent with Unified LLM system
         """
-        self.available_models = {}
-        self.current_model_name = None
+        self.llm = UnifiedLLM(gemini_api_key, openai_api_key, preferred_model)
         self.preferred_model = preferred_model
-        self.openai_client = None
-        self.model_capabilities = {
-            'gemini': {
-                'strengths': ['analysis', 'vietnamese', 'reasoning', 'financial_advice', 'prediction', 'technical_analysis', 'news_analysis', 'risk_assessment'],
-                'speed': 'fast',
-                'cost': 'free'
-            },
-            'openai': {
-                'strengths': ['analysis', 'reasoning', 'financial_advice', 'prediction', 'technical_analysis', 'news_analysis', 'english'],
-                'speed': 'medium',
-                'cost': 'paid'
-            },
-            'llama': {
-                'strengths': ['analysis', 'vietnamese', 'reasoning', 'financial_advice', 'local_processing'],
-                'speed': 'medium',
-                'cost': 'free_local'
-            }
-        }
-        
-        # Initialize AI models with user-provided API keys
-        # No hardcoded or environment variables used
-        
-        # Initialize Llama (local)
-        if LITELLM_AVAILABLE:
-            try:
-                # Test Llama availability
-                test_response = completion(
-                    model="ollama/llama3.1:8b",
-                    messages=[{"role": "user", "content": "test"}],
-                    temperature=0.1,
-                    max_tokens=10,
-                )
-                if test_response and test_response.choices:
-                    self.available_models['llama'] = 'ollama/llama3.1:8b'
-                    logger.info("✅ Llama 3.1:8b initialized (local)")
-            except Exception as e:
-                logger.warning(f"⚠️ Llama not available: {str(e)}")
-        else:
-            logger.warning("⚠️ litellm not installed, Llama unavailable")
-        
-        # Initialize OpenAI
-        if openai_api_key:
-            try:
-                self.openai_client = OpenAI(api_key=openai_api_key)
-                self.openai_api_key = openai_api_key
-                
-                # Try different OpenAI models
-                openai_models = [
-                    'gpt-4o',           # Latest GPT-4 Omni
-                    'gpt-4-turbo',      # GPT-4 Turbo
-                    'gpt-4',            # Standard GPT-4
-                    'gpt-3.5-turbo'     # Fallback
-                ]
-                
-                # Just set the first available model without testing to avoid API calls during init
-                self.available_models['openai'] = openai_models[0]
-                logger.info(f"✅ OpenAI initialized with model: {openai_models[0]}")
-                        
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize OpenAI: {str(e)}")
-        
-        # Initialize Gemini
-        if gemini_api_key:
-            try:
-                genai.configure(api_key=gemini_api_key)
-                
-                # Try different model names (API v1beta compatible)
-                model_names = [
-                    'gemini-3-pro-preview',        # Flagship mới nhất, khả năng suy luận cao
-                    'gemini-3-flash-preview',      # Tốc độ cao thế hệ 3
-
-                        # --- GEMINI 2.5 SERIES (Tiêu chuẩn - Production Ready) ---
-                    'gemini-2.5-pro',              # Bản chuẩn tốt nhất cho mọi tác vụ (thay thế 1.5 Pro)
-                    'gemini-2.5-flash',            # Bản chuẩn tốc độ cao (thay thế 1.5 Flash)
-                    'gemini-2.5-flash-lite',       # Chi phí cực thấp, tối ưu cho tác vụ đơn giản
-                    'gemini-2.5-pro-001',          # Bản snapshot cụ thể (tránh thay đổi ngầm)
-                    'gemini-2.5-flash-001',        # Bản snapshot cụ thể
-
-                    # --- GEMINI 2.0 SERIES (Ổn định cũ) ---
-                    'gemini-2.0-flash',            # Fallback tin cậy
-                    'gemini-2.0-flash-exp',        # Bản thử nghiệm cũ (có thể vẫn hoạt động)
-
-                    # --- LEGACY (Cũ - Hạn chế dùng cho dự án mới) ---
-                    'gemini-1.5-pro',
-                    'gemini-1.5-flash',
-                    'gemini-1.5-flash-8b',         # Bản siêu nhẹ đời cũ
-
-                    # --- SPECIALIZED (Nhúng & Hình ảnh) ---
-                    'text-embedding-005',          # Model nhúng văn bản mới nhất (Semantic Search)
-                    'imagen-3.0-generate-001',     # Tạo ảnh
-                    'aqa'             # Legacy fallback
-                ]
-                
-                model_initialized = False
-                for model_name in model_names:
-                    try:
-                        model = genai.GenerativeModel(model_name)
-                        # Initialize without testing to avoid quota usage
-                        self.available_models['gemini'] = model
-                        self.gemini_api_key = gemini_api_key
-                        self.current_model_name = model_name
-                        logger.info(f"✅ Gemini AI initialized with model: {model_name}")
-                        model_initialized = True
-                        break
-                    except Exception as e:
-                        error_msg = str(e).lower()
-                        if 'quota' in error_msg or '429' in error_msg:
-                            logger.warning(f"⚠️ Model {model_name} quota exceeded, trying next...")
-                        elif '404' in error_msg or 'not found' in error_msg:
-                            logger.warning(f"⚠️ Model {model_name} not found, trying next...")
-                        else:
-                            logger.warning(f"⚠️ Model {model_name} error: {e}")
-                        continue
-                
-                if not model_initialized:
-                    # If no model works, still allow offline mode
-                    logger.warning("⚠️ No Gemini models available, will use offline mode")
-                    self.available_models = {}
-                    
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize Gemini: {str(e)}")
-                # Don't set available_models if initialization failed
-                self.available_models = {}
-        
-        # Set offline mode based on available models
-        if not self.available_models:
-            logger.warning("⚠️ No AI models available, system will run in offline mode")
-            self.offline_mode = True
-        else:
-            self.offline_mode = False
-            logger.info(f"✅ AI models available: {list(self.available_models.keys())}")
+        self.offline_mode = len(self.llm.available_models) == 0
+    
+    @property
+    def available_models(self):
+        """Backward compatibility property"""
+        return self.llm.available_models
     
     def test_connection(self):
-        """Test AI API connections without using quota"""
-        results = {}
-        
-        # Test Gemini
-        if 'gemini' in self.available_models:
-            try:
-                # Just check if model exists, don't make API call
-                if hasattr(self, 'gemini_api_key') and self.gemini_api_key:
-                    results['gemini'] = True
-                    logger.info("✅ Gemini model available")
-                else:
-                    results['gemini'] = False
-            except:
-                results['gemini'] = False
-        else:
-            results['gemini'] = False
-        
-        # Test OpenAI
-        if 'openai' in self.available_models:
-            try:
-                # Just check if client exists, don't make API call
-                if hasattr(self, 'openai_client') and self.openai_client:
-                    results['openai'] = True
-                    logger.info("✅ OpenAI model available")
-                else:
-                    results['openai'] = False
-            except:
-                results['openai'] = False
-        else:
-            results['openai'] = False
-        
-        # Test Llama
-        if 'llama' in self.available_models:
-            try:
-                # Just check if litellm is available
-                if LITELLM_AVAILABLE:
-                    results['llama'] = True
-                    logger.info("✅ Llama model available")
-                else:
-                    results['llama'] = False
-            except:
-                results['llama'] = False
-        else:
-            results['llama'] = False
-        
-        return results
+        """Test AI API connections"""
+        return self.llm.test_all_connections()
     
     def select_best_model(self, task_type: str) -> str:
-        """
-        Select the best available model for a specific task type based on user preference
-        """
-        # Respect user preference first
-        if self.preferred_model == "gemini" and 'gemini' in self.available_models:
-            return 'gemini'
-        elif self.preferred_model == "openai" and 'openai' in self.available_models:
-            return 'openai'
-        elif self.preferred_model == "llama" and 'llama' in self.available_models:
-            return 'llama'
-        elif self.preferred_model == "auto":
-            # Auto mode: prefer Gemini for Vietnamese content and free usage
-            if 'gemini' in self.available_models:
-                return 'gemini'
-            # Fallback to OpenAI for English content
-            if 'openai' in self.available_models:
-                return 'openai'
-            # Final fallback to Llama (local)
-            if 'llama' in self.available_models:
-                return 'llama'
-        
-        # Final fallback - use any available model (priority order)
-        if 'gemini' in self.available_models:
-            return 'gemini'
-        if 'openai' in self.available_models:
-            return 'openai'
-        if 'llama' in self.available_models:
-            return 'llama'
-        
-        raise ValueError("No AI models available")
+        """Select best model - backward compatibility"""
+        return self.llm._select_model() or 'offline'
     
     def generate_with_model(self, prompt: str, model_name: str, max_tokens: int = 2000) -> str:
-        """
-        Generate response using specified AI model
-        """
-        try:
-            if model_name == 'gemini' and 'gemini' in self.available_models:
-                response = self.available_models['gemini'].generate_content(prompt)
-                return response.text
-            
-            elif model_name == 'openai' and 'openai' in self.available_models:
-                if not hasattr(self, 'openai_client') or not self.openai_client:
-                    raise ValueError("OpenAI client not initialized")
-                openai_model = self.available_models['openai']
-                response = self.openai_client.chat.completions.create(
-                    model=openai_model,
-                    messages=[{"role": "user", "content": prompt}],
-                    max_tokens=max_tokens,
-                    temperature=0.7
-                )
-                return response.choices[0].message.content
-            
-            elif model_name == 'llama' and 'llama' in self.available_models:
-                if not LITELLM_AVAILABLE:
-                    raise ValueError("litellm not available for Llama")
-                
-                response = completion(
-                    model="ollama/llama3.1:8b",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "Trợ lý tài chính. Trả lời ngắn gọn tiếng Việt."
-                        },
-                        {"role": "user", "content": prompt[:500]}  # Further limit prompt
-                    ],
-                    temperature=0.1,
-                    max_tokens=min(max_tokens, 150),  # Further reduce tokens
-                    timeout=10  # Reduce timeout
-                )
-                return response.choices[0].message.content
-
-            else:
-                raise ValueError(f"Model {model_name} not available.")
-                
-        except Exception as e:
-            logger.error(f"Error generating with {model_name}: {str(e)}")
-            raise
+        """Generate with specific model - backward compatibility"""
+        result = self.llm.generate(prompt, max_tokens, model_name)
+        if result['success']:
+            return result['response']
+        else:
+            raise Exception(result.get('error', 'Generation failed'))
 
     def generate_with_fallback(self, prompt: str, task_type: str, max_tokens: int = 2000, force_model: str = None) -> Dict[str, Any]:
         """
-        Generate response with automatic fallback respecting user preference
+        Generate response with automatic fallback
         """
-        # Check if we're already in offline mode
-        if getattr(self, 'offline_mode', True) or not self.available_models:
-            logger.info("📴 Using offline mode (no AI models available)")
+        if self.offline_mode:
             return self._generate_offline_fallback(prompt, task_type)
         
         try:
-            # Use forced model if specified, otherwise use preferred model
-            if force_model and force_model in self.available_models:
-                target_model = force_model
-                logger.info(f"🎯 Using forced model: {target_model}")
+            result = self.llm.generate(prompt, max_tokens, force_model)
+            
+            if result['success']:
+                return {
+                    'response': result['response'],
+                    'model_used': result['model'],
+                    'success': True
+                }
             else:
-                target_model = self.select_best_model(task_type)
-                logger.info(f"⚡ Using selected model: {target_model}")
-            
-            response = self.generate_with_model(prompt, target_model, max_tokens)
-            return {
-                'response': response,
-                'model_used': target_model,
-                'success': True
-            }
-        except Exception as e:
-            logger.error(f"Target model {target_model} failed: {str(e)}")
-            
-            # If force_model is specified and fails, return offline immediately
-            if force_model:
-                logger.info(f"Force model {force_model} failed, using offline mode")
                 return self._generate_offline_fallback(prompt, task_type)
-            
-            # Try fallback model only if not using force_model
-            try:
-                fallback_models = [m for m in self.available_models.keys() if m != target_model]
-                if fallback_models:
-                    fallback_model = fallback_models[0]
-                    logger.info(f"Trying fallback model: {fallback_model}")
-                    response = self.generate_with_model(prompt, fallback_model, max_tokens)
-                    return {
-                        'response': response,
-                        'model_used': fallback_model,
-                        'success': True
-                    }
-            except Exception as e2:
-                logger.error(f"Fallback model {fallback_models[0] if fallback_models else 'none'} failed: {str(e2)}")
-            
-            # Use offline fallback when all AI models fail
-            logger.info("All models failed, using offline mode")
+                
+        except Exception as e:
+            logger.error(f"Generation failed: {e}")
             return self._generate_offline_fallback(prompt, task_type)
     
     def _generate_offline_fallback(self, prompt: str, task_type: str) -> Dict[str, Any]:
@@ -1208,47 +933,27 @@ Trả lời bằng tiếng Việt, chuyên nghiệp, chi tiết, thực tiễn, 
         return status
     
     def update_api_key(self, provider: str, api_key: str) -> Dict[str, Any]:
-        """Dynamically update Gemini API key"""
+        """Update API keys"""
         try:
             if provider.lower() == 'gemini':
-                genai.configure(api_key=api_key)
-                
-                # Try different model names (API v1beta compatible)
-                model_names = [
-                    'gemini-1.5-pro-latest',        # Latest stable pro
-                    'gemini-1.5-flash-latest',      # Latest stable flash
-                    'gemini-1.5-pro',               # Pro version
-                    'gemini-1.5-flash',             # Flash version
-                    'gemini-pro',                    # Legacy pro
-                    'gemini-1.0-pro-latest',        # Legacy latest
-                    'gemini-1.0-pro'                # Legacy fallback
-                ]
-                
-                for model_name in model_names:
-                    try:
-                        model = genai.GenerativeModel(model_name)
-                        # Initialize without testing to avoid quota usage
-                        self.available_models['gemini'] = model
-                        self.gemini_api_key = api_key
-                        self.current_model_name = model_name
-                        logger.info(f"✅ Gemini API key updated with model: {model_name}")
-                        return {'success': True, 'message': f'Gemini API key updated with model: {model_name}'}
-                    except Exception as e:
-                        error_msg = str(e).lower()
-                        if '404' in error_msg or 'not found' in error_msg:
-                            logger.warning(f"⚠️ Model {model_name} not found, trying next...")
-                        else:
-                            logger.warning(f"⚠️ Model {model_name} error: {e}")
-                        continue
-                else:
-                    # If no model works, return error
-                    return {'success': False, 'message': 'No available Gemini models found'}
+                self.llm.update_keys(gemini_key=api_key)
+            elif provider.lower() == 'openai':
+                self.llm.update_keys(openai_key=api_key)
             else:
-                return {'success': False, 'message': f'Only Gemini provider is supported. Got: {provider}'}
-                
+                return {'success': False, 'message': f'Unsupported provider: {provider}'}
+            
+            self.offline_mode = len(self.llm.available_models) == 0
+            return {'success': True, 'message': f'{provider} API key updated'}
+            
         except Exception as e:
-            logger.error(f"❌ Failed to update {provider} API key: {str(e)}")
-            return {'success': False, 'message': f'Failed to update {provider} API key: {str(e)}'}
+            return {'success': False, 'message': str(e)}
+    
+    def set_gemini_api_key(self, gemini_key: str = None, openai_key: str = None, preferred: str = "auto"):
+        """Backward compatibility method"""
+        self.llm.update_keys(gemini_key=gemini_key, openai_key=openai_key)
+        self.preferred_model = preferred
+        self.offline_mode = len(self.llm.available_models) == 0
+        return len(self.llm.available_models) > 0
     
     def get_model_recommendations(self, task_type: str) -> Dict[str, Any]:
         """Get model recommendations for specific task types"""
@@ -1346,10 +1051,10 @@ Trả lời bằng tiếng Việt, chuyên nghiệp, chi tiết, thực tiễn, 
     def get_model_info(self) -> Dict[str, Any]:
         """Get information about available models"""
         return {
-            'available_models': list(self.available_models.keys()),
-            'current_model': self.current_model_name,
-            'model_count': len(self.available_models),
-            'is_active': len(self.available_models) > 0
+            'available_models': list(self.llm.available_models.keys()),
+            'model_count': len(self.llm.available_models),
+            'is_active': len(self.llm.available_models) > 0,
+            'preferred_model': self.preferred_model
         }
 
 # Backward compatibility alias

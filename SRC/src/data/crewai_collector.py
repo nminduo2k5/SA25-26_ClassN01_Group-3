@@ -30,13 +30,13 @@ try:
         from crewai_tools import SerperDevTool, ScrapeWebsiteTool
         CREWAI_TOOLS_AVAILABLE = True
     except ImportError:
-        print("⚠️ CrewAI tools not available, using basic functionality")
+        print("CrewAI tools not available, using basic functionality")
         CREWAI_TOOLS_AVAILABLE = False
         SerperDevTool = None
         ScrapeWebsiteTool = None
         
 except ImportError:
-    print("⚠️ CrewAI not available. Install with: pip install crewai")
+    print("CrewAI not available. Install with: pip install crewai")
     CREWAI_AVAILABLE = False
     CREWAI_TOOLS_AVAILABLE = False
 
@@ -82,43 +82,43 @@ class CrewAIDataCollector:
             if self.preferred_model == "openai" and self.openai_api_key:
                 try:
                     self.llm = LLM(
-                        model="openai/gpt-4o",
+                        model="openai/gpt-3.5-turbo",
                         api_key=self.openai_api_key,
-                        temperature=0,
-                        max_tokens=2048
+                        temperature=0.1,
+                        max_tokens=512
                     )
-                    logger.info("✅ CrewAI using OpenAI GPT-4o (user preference)")
+                    logger.info("✅ CrewAI using OpenAI GPT-3.5 (optimized)")
                 except Exception as e:
                     logger.warning(f"OpenAI LLM failed, falling back to Gemini: {e}")
                     if self.gemini_api_key:
                         self.llm = LLM(
-                            model="gemini/gemini-2.0-flash-001",
+                            model="gemini/gemini-1.5-flash",
                             api_key=self.gemini_api_key,
-                            temperature=0,
-                            max_tokens=2048
+                            temperature=0.1,
+                            max_tokens=512
                         )
-                        logger.info("✅ CrewAI using Gemini 2.0 Flash (fallback)")
+                        logger.info("✅ CrewAI using Gemini Flash (fallback)")
                     else:
                         raise Exception("No fallback AI model available")
             elif self.preferred_model == "gemini" and self.gemini_api_key:
                 try:
                     self.llm = LLM(
-                        model="gemini/gemini-2.0-flash-001",
+                        model="gemini/gemini-1.5-flash",
                         api_key=self.gemini_api_key,
-                        temperature=0,
-                        max_tokens=2048
+                        temperature=0.1,
+                        max_tokens=512
                     )
-                    logger.info("✅ CrewAI using Gemini 2.0 Flash (user preference)")
+                    logger.info("✅ CrewAI using Gemini Flash (optimized)")
                 except Exception as e:
                     logger.warning(f"Gemini LLM failed, falling back to OpenAI: {e}")
                     if self.openai_api_key:
                         self.llm = LLM(
-                            model="openai/gpt-4o",
+                            model="openai/gpt-3.5-turbo",
                             api_key=self.openai_api_key,
-                            temperature=0,
-                            max_tokens=2048
+                            temperature=0.1,
+                            max_tokens=512
                         )
-                        logger.info("✅ CrewAI using OpenAI GPT-4o (fallback)")
+                        logger.info("✅ CrewAI using OpenAI GPT-3.5 (fallback)")
                     else:
                         raise Exception("No fallback AI model available")
             else:
@@ -126,32 +126,32 @@ class CrewAIDataCollector:
                 if self.gemini_api_key:
                     try:
                         self.llm = LLM(
-                            model="gemini/gemini-2.0-flash-001",
+                            model="gemini/gemini-1.5-flash",
                             api_key=self.gemini_api_key,
-                            temperature=0,
-                            max_tokens=2048
+                            temperature=0.1,
+                            max_tokens=512
                         )
-                        logger.info("✅ CrewAI using Gemini 2.0 Flash (auto mode)")
+                        logger.info("✅ CrewAI using Gemini Flash (auto mode)")
                     except Exception as e:
                         logger.warning(f"Gemini LLM failed, trying OpenAI: {e}")
                         if self.openai_api_key:
                             self.llm = LLM(
-                                model="openai/gpt-4o",
+                                model="openai/gpt-3.5-turbo",
                                 api_key=self.openai_api_key,
-                                temperature=0,
-                                max_tokens=2048
+                                temperature=0.1,
+                                max_tokens=512
                             )
-                            logger.info("✅ CrewAI using OpenAI GPT-4o (auto fallback)")
+                            logger.info("✅ CrewAI using OpenAI GPT-3.5 (auto fallback)")
                         else:
                             raise Exception("No AI models available")
                 elif self.openai_api_key:
                     self.llm = LLM(
-                        model="openai/gpt-4o",
+                        model="openai/gpt-3.5-turbo",
                         api_key=self.openai_api_key,
-                        temperature=0,
-                        max_tokens=2048
+                        temperature=0.1,
+                        max_tokens=512
                     )
-                    logger.info("✅ CrewAI using OpenAI GPT-4o (auto mode - no Gemini)")
+                    logger.info("✅ CrewAI using OpenAI GPT-3.5 (auto mode - no Gemini)")
                 else:
                     raise Exception("No AI API keys provided")
             
@@ -178,25 +178,25 @@ class CrewAIDataCollector:
             
             # Create agents with or without tools
             self.news_agent = Agent(
-                role="Chuyên gia thu thập tin tức chứng khoán",
-                goal="Thu thập và phân tích tin tức mới nhất về thị trường chứng khoán Việt Nam",
-                backstory="Chuyên gia với 10 năm kinh nghiệm phân tích tin tức tài chính, "
-                         "có khả năng xác định tin tức quan trọng ảnh hưởng đến giá cổ phiếu",
+                role="Chuyên gia tin tức",
+                goal="Thu thập tin tức chứng khoán VN",
+                backstory="Chuyên gia phân tích tin tức tài chính",
                 tools=tools,
                 llm=self.llm,
                 verbose=False,
-                max_rpm=5
+                max_rpm=2,
+                max_execution_time=30
             )
             
             self.market_agent = Agent(
-                role="Chuyên gia phân tích thị trường",
-                goal="Phân tích tình hình thị trường chứng khoán tổng thể",
-                backstory="Chuyên gia phân tích vĩ mô với khả năng đánh giá xu hướng thị trường "
-                         "và tác động của các yếu tố kinh tế",
+                role="Chuyên gia thị trường",
+                goal="Phân tích thị trường chứng khoán VN",
+                backstory="Chuyên gia phân tích vĩ mô",
                 tools=tools,
                 llm=self.llm,
                 verbose=False,
-                max_rpm=5
+                max_rpm=2,
+                max_execution_time=30
             )
             
             logger.info(f"✅ CrewAI agents setup successfully with {len(tools)} tools")
@@ -213,23 +213,9 @@ class CrewAIDataCollector:
         try:
             # Create task for stock news
             news_task = Task(
-                description=f"""
-                Tìm kiếm và thu thập {limit} tin tức mới nhất về cổ phiếu {symbol}.
-                
-                Yêu cầu:
-                1. Tìm kiếm tin tức từ các nguồn uy tín (cafef.vn, vneconomy.vn, dantri.com.vn)
-                2. Thu thập nội dung chi tiết từ 3 bài quan trọng nhất
-                3. Phân tích tác động đến giá cổ phiếu
-                4. KHÔNG sử dụng nguồn vietstock.vn
-                
-                Trả về định dạng JSON với:
-                - headlines: danh sách tiêu đề
-                - summaries: tóm tắt nội dung
-                - sentiment: tích cực/tiêu cực/trung tính
-                - impact_score: điểm ảnh hưởng (0-10)
-                """,
+                description=f"Tìm {limit} tin về {symbol}. JSON: {{\"headlines\":[\"title1\"], \"sentiment\":\"Positive\", \"impact_score\":5}}. Nguồn: cafef.vn",
                 agent=self.news_agent,
-                expected_output="JSON object với tin tức và phân tích sentiment"
+                expected_output="JSON với headlines, sentiment, impact_score"
             )
             
             # Create crew and execute
@@ -258,20 +244,9 @@ class CrewAIDataCollector:
             
         try:
             market_task = Task(
-                description="""
-                Thu thập tin tức tổng quan thị trường chứng khoán Việt Nam hôm nay.
-                
-                Tìm kiếm:
-                1. Diễn biến VN-Index, HNX-Index
-                2. Thông tin về dòng tiền ngoại
-                3. Tin tức chính sách ảnh hưởng thị trường
-                4. Phân tích xu hướng ngắn hạn
-                
-                Nguồn ưu tiên: cafef.vn, vneconomy.vn, dantri.com.vn
-                TRÁNH: vietstock.vn
-                """,
+                description="Tóm tắt thị trường VN: VN-Index, dòng tiền, chính sách. Nguồn: cafef.vn",
                 agent=self.market_agent,
-                expected_output="Tóm tắt tình hình thị trường với các điểm chính"
+                expected_output="Tóm tắt ngắn gọn thị trường"
             )
             
             crew = Crew(
@@ -342,25 +317,9 @@ class CrewAIDataCollector:
         try:
             # Create task for getting real stock symbols
             symbols_task = Task(
-                description="""
-                Tìm kiếm và thu thập danh sách các mã cổ phiếu Việt Nam đang giao dịch trên HOSE và HNX.
-                
-                Yêu cầu:
-                1. Tìm kiếm từ các nguồn chính thức: cafef.vn, vneconomy.vn, investing.com
-                2. Lấy ít nhất 40-50 mã cổ phiếu phổ biến
-                3. Bao gồm các ngành: Ngân hàng, Bất động sản, Công nghệ, Tiêu dùng, Công nghiệp
-                4. Ưu tiên các mã blue-chip: VCB, BID, CTG, TCB, VIC, VHM, HPG, FPT, MSN, MWG
-                
-                Trả về định dạng JSON:
-                {
-                  "symbols": [
-                    {"symbol": "VCB", "name": "Ngân hàng TMCP Ngoại thương Việt Nam", "sector": "Banking", "exchange": "HOSE"},
-                    {"symbol": "BID", "name": "Ngân hàng TMCP Đầu tư và Phát triển VN", "sector": "Banking", "exchange": "HOSE"}
-                  ]
-                }
-                """,
+                description="Lấy 40+ mã VN: VCB,BID,VIC,HPG,FPT... JSON: {\"symbols\":[{\"symbol\":\"VCB\",\"name\":\"Vietcombank\"}]}",
                 agent=self.market_agent,
-                expected_output="JSON object với danh sách mã cổ phiếu Việt Nam"
+                expected_output="JSON với symbols array"
             )
             
             # Create crew and execute
