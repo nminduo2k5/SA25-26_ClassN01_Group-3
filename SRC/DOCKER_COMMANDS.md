@@ -60,25 +60,25 @@ docker-compose logs api
 
 ### Health Check
 ```bash
-# API health
-curl http://localhost:8000/health
+# Streamlit health
+curl http://localhost:8501/healthz
 
 # Container health
-docker inspect vnstock-api --format='{{.State.Health.Status}}'
+docker inspect vnstock-streamlit --format='{{.State.Health.Status}}'
 ```
 
 ## 🛠️ Development Commands
 
-### Individual Services
+### Service Management
 ```bash
-# Chỉ start API
-docker-compose up api -d
-
-# Chỉ start Streamlit
+# Start Streamlit
 docker-compose up streamlit -d
 
-# Restart service
+# Restart Streamlit
 docker-compose restart streamlit
+
+# Stop Streamlit
+docker-compose stop streamlit
 ```
 
 ### Debug & Access
@@ -264,6 +264,4 @@ docker-compose down && docker system prune -f && docker-compose up -d --build
 
 ### URLs
 - **Streamlit**: http://localhost:8501
-- **FastAPI**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
-- **Health**: http://localhost:8000/health
+- **Health**: http://localhost:8501/healthz

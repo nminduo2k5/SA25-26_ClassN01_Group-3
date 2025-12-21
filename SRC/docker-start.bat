@@ -27,6 +27,7 @@ if "%command%"=="restart" goto :restart
 if "%command%"=="logs" goto :logs
 if "%command%"=="status" goto :status
 if "%command%"=="clean" goto :clean
+if "%command%"=="update" goto :update
 goto :help
 
 :start
@@ -36,58 +37,31 @@ if "%environment%"=="dev" goto :start_dev
 if "%environment%"=="development" goto :start_dev
 if "%environment%"=="prod" goto :start_prod
 if "%environment%"=="production" goto :start_prod
-if "%environment%"=="simple" goto :start_simple
-if "%environment%"=="fast" goto :start_fast
 
-echo ❌ Invalid environment. Use: dev, prod, simple, or fast
+echo ❌ Invalid environment. Use: dev or prod
 pause
 exit /b 1
 
 :start_dev
 echo 🔧 Starting Development Environment...
-docker-compose -f docker-compose.dev.yml down
-docker-compose -f docker-compose.dev.yml build
-docker-compose -f docker-compose.dev.yml up -d
+docker-compose down
+docker-compose build
+docker-compose up -d
 echo ✅ Development services started!
 echo 🌐 Streamlit: http://localhost:8501
-echo 🔗 API: http://localhost:8000
-echo 📚 API Docs: http://localhost:8000/api/docs
 goto :end
 
 :start_prod
 echo 🏭 Starting Production Environment...
-docker-compose -f docker-compose.prod.yml down
-docker-compose -f docker-compose.prod.yml build
-docker-compose -f docker-compose.prod.yml up -d
-echo ✅ Production services started!
-echo 🌐 Application: http://localhost
-echo 🔗 API: http://localhost:8000
-goto :end
-
-:start_simple
-echo 🎯 Starting Simple Environment...
 docker-compose down
-docker-compose build
+docker-compose build --no-cache
 docker-compose up -d
-echo ✅ Simple services started!
+echo ✅ Production services started!
 echo 🌐 Streamlit: http://localhost:8501
-echo 🔗 API: http://localhost:8000
-goto :end
-
-:start_fast
-echo ⚡ Starting Fast Environment...
-docker-compose -f docker-compose.fast.yml down
-docker-compose -f docker-compose.fast.yml build
-docker-compose -f docker-compose.fast.yml up -d
-echo ✅ Fast services started!
-echo 🌐 Streamlit: http://localhost:8501
-echo 🔗 API: http://localhost:8000
 goto :end
 
 :stop
 echo 🛑 Stopping all services...
-docker-compose -f docker-compose.dev.yml down 2>nul
-docker-compose -f docker-compose.prod.yml down 2>nul
 docker-compose down 2>nul
 echo ✅ All services stopped
 goto :end
@@ -95,7 +69,30 @@ goto :end
 :restart
 echo 🔄 Restarting services...
 call :stop
-call :start
+call :start %environment%
+goto :end
+
+:update
+echo 🔄 Updating Docker with latest code changes...
+echo ==========================================
+echo.
+echo 1. Stopping existing containers...
+docker-compose down
+echo.
+echo 2. Removing old images...
+docker rmi src-streamlit:latest 2>nul
+echo.
+echo 3. Rebuilding images with latest code...
+docker-compose build --no-cache
+echo.
+echo 4. Starting updated containers...
+docker-compose up -d
+echo.
+echo 5. Checking container status...
+docker-compose ps
+echo.
+echo ✅ Docker update completed!
+echo 🌐 Streamlit: http://localhost:8501
 goto :end
 
 :logs
@@ -133,9 +130,10 @@ echo.
 echo Usage: %0 ^<command^> [options]
 echo.
 echo Commands:
-echo   start [env]    Start services (env: dev, prod, simple)
+echo   start [env]    Start services (env: dev, prod)
 echo   stop           Stop all services
 echo   restart [env]  Restart services
+echo   update         Update with latest code changes
 echo   logs [service] Show logs
 echo   status         Show service status
 echo   clean          Clean up Docker resources
@@ -144,8 +142,9 @@ echo.
 echo Examples:
 echo   %0 start dev       # Start development environment
 echo   %0 start prod      # Start production environment
-echo   %0 logs api        # Show API logs
-echo   %0 status          # Show all service status
+echo   %0 update          # Update with latest code
+echo   %0 logs streamlit  # Show Streamlit logs
+echo   %0 status          # Show service status
 echo.
 
 :end
