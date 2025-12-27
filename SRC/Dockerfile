@@ -1,8 +1,14 @@
-# Multi-Agent Vietnam Stock System Docker
-FROM python:3.11-slim
+# Multi-stage Dockerfile for VNStock Multi-Agent System
+FROM python:3.11-slim as base
 
-# Set working directory
-WORKDIR /app
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    STREAMLIT_SERVER_HEADLESS=true \
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -10,30 +16,62 @@ RUN apt-get update && apt-get install -y \
     g++ \
     curl \
     git \
-    && rm -rf /var/lib/apt/lists/*
+    build-essential \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create app directory and user
+WORKDIR /app
+RUN useradd --create-home --shell /bin/bash appuser
 
 # Copy requirements first for better caching
-COPY requirements-core.txt requirements.txt
+COPY requirements*.txt ./
 
 # Install Python dependencies
-RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p logs static/uploads
+RUN mkdir -p /app/data /app/logs /app/cache /app/models && \
+    chown -R appuser:appuser /app
 
-# Set environment variables
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
+# Set permissions
+RUN chmod +x /app/*.py
 
-# Expose ports
+# Production stage
+FROM base as production
+
+# Switch to non-root user
+USER appuser
+
+# Expose port
 EXPOSE 8501
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8501/healthz || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8501/_stcore/health || exit 1
 
-# Default command (can be overridden)
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Default command
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--browser.gatherUsageStats=false"]
+
+# Development stage
+FROM base as development
+
+# Install development dependencies
+RUN pip install --no-cache-dir \
+    pytest \
+    black \
+    flake8 \
+    jupyter
+
+# Switch to non-root user
+USER appuser
+
+# Expose port
+EXPOSE 8501
+
+# Development command with hot reload
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.fileWatcherType=poll"]

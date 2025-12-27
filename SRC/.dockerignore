@@ -1,3 +1,22 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+README*
+CHANGELOG*
+LICENSE*
+docs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
 # Python
 __pycache__/
 *.py[cod]
@@ -19,60 +38,80 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
 # Virtual environments
 venv/
 env/
 ENV/
+.env
+.venv
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Git
-.git/
-.gitignore
+# Jupyter
+.ipynb_checkpoints
 
 # Logs
 *.log
 logs/
+*.out
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
 # Temporary files
 *.tmp
 *.temp
-
-# Documentation
-*.md
-docs/
-
-# Test files
-test_*.py
-*_test.py
-tests/
+temp/
+tmp/
 
 # Cache
+cache/
 .cache/
-.pytest_cache/
+*.cache
 
-# Environment files (security)
-.env
-.env.local
-.env.production
+# Models (large files)
+*.pkl
+*.joblib
+*.h5
+*.hdf5
+models/*.pkl
+models/*.h5
 
-# Database files (will be mounted as volume)
-*.db
-*.sqlite
-*.sqlite3
+# Data files (if large)
+data/*.csv
+data/*.json
+data/*.parquet
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
 
 # Node modules (if any)
 node_modules/
-
-# Backup files
-*.bak
-*.backup
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

@@ -22,9 +22,76 @@ st.set_page_config(
 # Tải CSS tích hợp Bootstrap
 load_custom_css()
 
-# CSS bổ sung cho ứng dụng
+# CSS bổ sung cho ứng dụng với sidebar toggle
 st.markdown("""
 <style>
+    /* Sidebar Toggle Button */
+    .sidebar-toggle {
+        position: fixed;
+        top: 1rem;
+        left: 1rem;
+        z-index: 1001;
+        background: #2a5298;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.75rem;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+        transition: all 0.3s ease;
+        font-size: 1.2rem;
+        width: 3rem;
+        height: 3rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: monospace;
+    }
+    
+    .sidebar-toggle:hover {
+        background: #1e3c72;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+    }
+    
+    /* Streamlit sidebar animation */
+    section[data-testid="stSidebar"] {
+        transition: all 0.3s ease-in-out;
+    }
+    
+    .css-1d391kg {
+        transition: all 0.3s ease-in-out;
+    }
+    
+    /* Hide sidebar when collapsed */
+    .sidebar-collapsed section[data-testid="stSidebar"] {
+        transform: translateX(-100%);
+        opacity: 0;
+        visibility: hidden;
+    }
+    
+    .sidebar-collapsed .css-1d391kg {
+        transform: translateX(-100%);
+        opacity: 0;
+        visibility: hidden;
+    }
+    
+    /* Adjust main content when sidebar is collapsed */
+    .sidebar-collapsed .main .block-container {
+        padding-left: 4rem;
+        max-width: none;
+    }
+    
+    .sidebar-collapsed .css-18e3th9 {
+        margin-left: 0 !important;
+        padding-left: 4rem;
+    }
+    
+    .sidebar-collapsed .css-1lcbmhc {
+        margin-left: 0 !important;
+        padding-left: 4rem;
+    }
+    
     /* App-specific overrides */
     .main-header {
         background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
@@ -80,6 +147,87 @@ st.markdown("""
         box-shadow: 0 5px 20px rgba(0,0,0,0.12);
     }
 </style>
+
+<script>
+(function() {
+    'use strict';
+    
+    let toggleButton = null;
+    let sidebarCollapsed = false;
+    
+    function initSidebarToggle() {
+        if (document.querySelector('.sidebar-toggle')) {
+            return;
+        }
+        
+        toggleButton = document.createElement('button');
+        toggleButton.className = 'sidebar-toggle';
+        toggleButton.innerHTML = '☰';
+        toggleButton.title = 'Toggle Sidebar';
+        toggleButton.setAttribute('aria-label', 'Toggle Sidebar');
+        
+        toggleButton.addEventListener('click', toggleSidebar);
+        document.body.appendChild(toggleButton);
+        
+        restoreSidebarState();
+    }
+    
+    function toggleSidebar() {
+        const body = document.body;
+        sidebarCollapsed = !sidebarCollapsed;
+        
+        if (sidebarCollapsed) {
+            body.classList.add('sidebar-collapsed');
+            toggleButton.innerHTML = '☰';
+            toggleButton.title = 'Show Sidebar';
+        } else {
+            body.classList.remove('sidebar-collapsed');
+            toggleButton.innerHTML = '✕';
+            toggleButton.title = 'Hide Sidebar';
+        }
+        
+        localStorage.setItem('sidebarCollapsed', sidebarCollapsed.toString());
+        
+        setTimeout(() => {
+            window.dispatchEvent(new Event('resize'));
+        }, 300);
+    }
+    
+    function restoreSidebarState() {
+        const savedState = localStorage.getItem('sidebarCollapsed');
+        if (savedState === 'true') {
+            sidebarCollapsed = false;
+            toggleSidebar();
+        } else {
+            toggleButton.innerHTML = '✕';
+            toggleButton.title = 'Hide Sidebar';
+        }
+    }
+    
+    function waitForStreamlit() {
+        const sidebar = document.querySelector('[data-testid="stSidebar"]') || 
+                       document.querySelector('.css-1d391kg') ||
+                       document.querySelector('.css-1lcbmhc');
+        
+        if (sidebar) {
+            initSidebarToggle();
+        } else {
+            setTimeout(waitForStreamlit, 500);
+        }
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', waitForStreamlit);
+    } else {
+        waitForStreamlit();
+    }
+    
+    window.addEventListener('load', function() {
+        setTimeout(waitForStreamlit, 1000);
+    });
+    
+})();
+</script>
 """, unsafe_allow_html=True)
 
 # Khởi tạo hệ thống
@@ -1838,6 +1986,9 @@ with st.sidebar:
     selected_stock = st.selectbox("Chọn cổ phiếu", stock_options)
     symbol = selected_stock.split(" - ")[0] if selected_stock else ""
 
+# Chat input outside tabs (for st.chat_input compatibility)
+chat_input_container = st.container()
+
 # Main Content Tabs
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Phân tích cổ phiếu",
@@ -2188,12 +2339,17 @@ with tab2:
                 for info in model_info:
                     st.caption(info)
         
-        user_question = st.text_area(
-            "Câu hỏi của bạn:",
-            placeholder="Ví dụ: Tôi có 100 triệu VND, nên đầu tư vào cổ phiếu nào trong thời điểm này?",
-            height=100,
-            key="chat_input"
-        )
+        # Initialize chat history in session state
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
+        
+        # Display chat history
+        if st.session_state.chat_history:
+            st.markdown("### 💬 Lịch sử trò chuyện")
+            for i, (question, answer) in enumerate(st.session_state.chat_history):
+                with st.expander(f"💭 {i+1}. {question[:50]}...", expanded=False):
+                    st.markdown(f"**❓ Câu hỏi:** {question}")
+                    st.markdown(f"**🤖 Trả lời:** {answer}")
         
         # Show current AI model being used with fixed mode indicator
         if main_agent.gemini_agent and main_agent.gemini_agent.available_models:
@@ -2209,6 +2365,17 @@ with tab2:
             except:
                 st.warning("⚠️ Không có AI model khả dụng")
         
+        # Store question in session state for processing outside tabs
+        if "pending_question" not in st.session_state:
+            st.session_state.pending_question = None
+        
+        user_question = st.text_area(
+            "Câu hỏi của bạn:",
+            placeholder="Ví dụ: Tôi có 100 triệu VND, nên đầu tư vào cổ phiếu nào trong thời điểm này?",
+            height=100,
+            key="chat_input_area"
+        )
+        
         # Enhanced button with better styling
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
@@ -2216,186 +2383,14 @@ with tab2:
                 "🚀 Hỏi AI Chuyên Gia DuongPro", 
                 type="primary", 
                 use_container_width=True,
-                help="Click để nhận phân tích chuyên sâu từ AI DuongPro (Tự động chọn AI model tốt nhất)"
+                help="Click để nhận phân tích chuyên sâu từ AI DuongPro (Tự động chọn AI model tốt nhất)",
+                key="ask_ai_button"
             )
         
-        if ask_button:
-            if user_question.strip():
-                # Enhanced loading with progress and timeout info
-                with st.spinner("🧠 AI đang phân tích... (Llama local có thể mất 10-30s)"):
-                    try:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        # Force use selected model if not auto
-                        if selected_ai_model != "auto":
-                            response = loop.run_until_complete(main_agent.process_query(user_question, symbol, force_model=selected_ai_model))
-                        else:
-                            response = loop.run_until_complete(main_agent.process_query(user_question, symbol))
-                        loop.close()
-                        
-                        if response.get('expert_advice'):
-                            # Get the model used for this response
-                            model_used = "Unknown"
-                            if "🤖 **AI Model:**" in response['expert_advice']:
-                                model_line = response['expert_advice'].split("🤖 **AI Model:**")[1].split("\n")[0].strip()
-                                model_used = model_line
-                            elif selected_ai_model != "auto":
-                                model_used = f"{selected_ai_model.upper()} (Cố định)"
-                            else:
-                                model_used = "Auto Selection"
-                            
-                            # Enhanced response display with beautiful formatting
-                            st.markdown(f"""
-                            <div style="
-                                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-                                padding: 1rem;
-                                border-radius: 10px;
-                                margin: 1.5rem 0 1rem 0;
-                                text-align: center;
-                            ">
-                                <h3 style="color: white; margin: 0; font-size: 1.5rem;">🎓 Phân tích từ AI DuongPro</h3>
-                                <p style="color: white; margin: 0.5rem 0 0 0; font-size: 0.9rem; opacity: 0.9;">Powered by: {model_used}</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            # Process and enhance the advice text
-                            advice_text = response['expert_advice']
-                            
-                            # Enhanced text processing for better readability
-                            advice_text = advice_text.replace('**', '<strong>').replace('**', '</strong>')
-                            advice_text = advice_text.replace('PHÂN TÍCH CHUYÊN SÂU:', '<h4 style="color: #2d3436; margin-top: 1.5rem;">📊 PHÂN TÍCH CHUYÊN SÂU:</h4>')
-                            advice_text = advice_text.replace('KẾT LUẬN & KHUYẾN NGHỊ:', '<h4 style="color: #00b894; margin-top: 1.5rem;">🎯 KẾT LUẬN & KHUYẾN NGHỊ:</h4>')
-                            advice_text = advice_text.replace('CẢNH BÁO RỦI RO:', '<h4 style="color: #e17055; margin-top: 1.5rem;">⚠️ CẢNH BÁO RỦI RO:</h4>')
-                            advice_text = advice_text.replace('HÀNH ĐỘNG CỤ THỂ:', '<h4 style="color: #6c5ce7; margin-top: 1.5rem;">💡 HÀNH ĐỘNG CỤ THỂ:</h4>')
-                            
-                            # Replace line breaks with proper HTML
-                            advice_text = advice_text.replace('\n\n', '</p><p style="margin: 1rem 0; line-height: 1.6;">')
-                            advice_text = advice_text.replace('\n', '<br>')
-                            
-                            # Wrap in paragraph tags
-                            if not advice_text.startswith('<'):
-                                advice_text = f'<p style="margin: 1rem 0; line-height: 1.6;">{advice_text}</p>'
-                            
-                            st.markdown(f"""
-                            <div style="
-                                background: white;
-                                padding: 2rem;
-                                border-radius: 15px;
-                                box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-                                border-left: 5px solid #667eea;
-                                margin: 1rem 0;
-                                font-size: 1.05rem;
-                            ">
-                                {advice_text}
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                            # Enhanced recommendations section
-                            if response.get('recommendations'):
-                                st.markdown("""
-                                <div style="
-                                    background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
-                                    padding: 1rem;
-                                    border-radius: 10px;
-                                    margin: 1.5rem 0 1rem 0;
-                                    text-align: center;
-                                ">
-                                    <h3 style="color: white; margin: 0; font-size: 1.3rem;">💡 Hành động cụ thể được khuyến nghị</h3>
-                                </div>
-                                """, unsafe_allow_html=True)
-                                
-                                for i, rec in enumerate(response['recommendations'], 1):
-                                    # Color coding for different types of recommendations
-                                    if any(word in rec.lower() for word in ['mua', 'buy', 'tăng']):
-                                        color = '#00b894'
-                                        icon = '🟢'
-                                    elif any(word in rec.lower() for word in ['bán', 'sell', 'giảm']):
-                                        color = '#e17055'
-                                        icon = '🔴'
-                                    else:
-                                        color = '#6c5ce7'
-                                        icon = '🔵'
-                                    
-                                    st.markdown(f"""
-                                    <div style="
-                                        background: {color}22;
-                                        padding: 1rem;
-                                        border-radius: 10px;
-                                        margin: 0.8rem 0;
-                                        border-left: 4px solid {color};
-                                    ">
-                                        <strong style="color: {color}; font-size: 1.1rem;">{icon} {i}. {rec}</strong>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                            
-                            # Add timestamp and disclaimer
-                            from datetime import datetime
-                            current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                            
-                            # Get available models for display
-                            available_models = list(main_agent.gemini_agent.available_models.keys())
-                            models_display = ", ".join([m.upper() for m in available_models])
-                            
-                            st.markdown(f"""
-                            <div style="
-                                background: #f8f9fa;
-                                padding: 1rem;
-                                border-radius: 8px;
-                                margin-top: 1.5rem;
-                                text-align: center;
-                                border: 1px solid #e9ecef;
-                            ">
-                                <p style="color: #6c757d; margin: 0; font-size: 0.9rem;">
-                                    🕐 Phân tích lúc: {current_time} | 🤖 AI Models: {models_display}<br>
-                                    ⚠️ <strong>Lưu ý:</strong> Đây là thông tin tham khảo, không phải lời khuyên đầu tư tuyệt đối
-                                </p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            
-                        else:
-                            # Enhanced error display
-                            st.markdown("""
-                            <div style="
-                                background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
-                                padding: 1.5rem;
-                                border-radius: 12px;
-                                text-align: center;
-                                margin: 1rem 0;
-                            ">
-                                <h4 style="color: #d63031; margin-bottom: 0.5rem;">❌ Không thể nhận phản hồi từ AI</h4>
-                                <p style="color: #2d3436; margin: 0;">Vui lòng thử lại hoặc kiểm tra kết nối</p>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            if response.get('error'):
-                                st.error(f"Chi tiết lỗi: {response['error']}")
-                                
-                    except Exception as e:
-                        st.markdown(f"""
-                        <div style="
-                            background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
-                            padding: 1.5rem;
-                            border-radius: 12px;
-                            text-align: center;
-                            margin: 1rem 0;
-                        ">
-                            <h4 style="color: #d63031; margin-bottom: 0.5rem;">❌ Lỗi hệ thống</h4>
-                            <p style="color: #2d3436; margin-bottom: 0.5rem;">{str(e)}</p>
-                            <p style="color: #636e72; font-size: 0.9rem; margin: 0;">💡 Thử lại hoặc kiểm tra Gemini API key trong sidebar</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-            else:
-                # Enhanced empty input warning
-                st.markdown("""
-                <div style="
-                    background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
-                    padding: 1rem;
-                    border-radius: 10px;
-                    text-align: center;
-                    margin: 1rem 0;
-                ">
-                    <h4 style="color: #e17055; margin: 0;">📝 Vui lòng nhập câu hỏi</h4>
-                </div>
-                """, unsafe_allow_html=True)
+        # Store question for processing outside tabs
+        if ask_button and user_question.strip():
+            st.session_state.pending_question = user_question.strip()
+            st.rerun()
 
 # Tab 3: VN Market
 with tab3:
@@ -3077,6 +3072,179 @@ with tab6:
                             #st.error("🚨 **CẢNH BÁO:** Thông tin từ mạng xã hội - Luôn DYOR (Do Your Own Research) trước khi đầu tư!")
                         #elif 'Bloomberg' in news_source or 'Reuters' in news_source or 'Financial Times' in news_source:
                             #st.success("✅ **TIN CẬY:** Nguồn tin uy tín từ tổ chức tài chính hàng đầu")
+
+# Process pending chat question outside tabs (to avoid st.chat_input restriction)
+if st.session_state.get('pending_question'):
+    question = st.session_state.pending_question
+    st.session_state.pending_question = None  # Clear the question
+    
+    # Enhanced loading with progress and timeout info
+    with st.spinner("🧠 AI đang phân tích... (Llama local có thể mất 10-30s)"):
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            # Force use selected model if not auto
+            if selected_ai_model != "auto":
+                response = loop.run_until_complete(main_agent.process_query(question, symbol, force_model=selected_ai_model))
+            else:
+                response = loop.run_until_complete(main_agent.process_query(question, symbol))
+            loop.close()
+            
+            if response.get('expert_advice'):
+                # Add to chat history
+                st.session_state.chat_history.append((question, response['expert_advice']))
+                
+                # Get the model used for this response
+                model_used = "Unknown"
+                if "🤖 **AI Model:**" in response['expert_advice']:
+                    model_line = response['expert_advice'].split("🤖 **AI Model:**")[1].split("\n")[0].strip()
+                    model_used = model_line
+                elif selected_ai_model != "auto":
+                    model_used = f"{selected_ai_model.upper()} (Cố định)"
+                else:
+                    model_used = "Auto Selection"
+                
+                # Enhanced response display with beautiful formatting
+                st.markdown(f"""
+                <div style="
+                    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                    padding: 1rem;
+                    border-radius: 10px;
+                    margin: 1.5rem 0 1rem 0;
+                    text-align: center;
+                ">
+                    <h3 style="color: white; margin: 0; font-size: 1.5rem;">🎓 Phân tích từ AI DuongPro</h3>
+                    <p style="color: white; margin: 0.5rem 0 0 0; font-size: 0.9rem; opacity: 0.9;">Powered by: {model_used}</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Process and enhance the advice text
+                advice_text = response['expert_advice']
+                
+                # Enhanced text processing for better readability
+                advice_text = advice_text.replace('**', '<strong>').replace('**', '</strong>')
+                advice_text = advice_text.replace('PHÂN TÍCH CHUYÊN SÂU:', '<h4 style="color: #2d3436; margin-top: 1.5rem;">📊 PHÂN TÍCH CHUYÊN SÂU:</h4>')
+                advice_text = advice_text.replace('KẾT LUẬN & KHUYẾN NGHỊ:', '<h4 style="color: #00b894; margin-top: 1.5rem;">🎯 KẾT LUẬN & KHUYẾN NGHỊ:</h4>')
+                advice_text = advice_text.replace('CẢNH BÁO RỦI RO:', '<h4 style="color: #e17055; margin-top: 1.5rem;">⚠️ CẢNH BÁO RỦI RO:</h4>')
+                advice_text = advice_text.replace('HÀNH ĐỘNG CỤ THỂ:', '<h4 style="color: #6c5ce7; margin-top: 1.5rem;">💡 HÀNH ĐỘNG CỤ THỂ:</h4>')
+                
+                # Replace line breaks with proper HTML
+                advice_text = advice_text.replace('\n\n', '</p><p style="margin: 1rem 0; line-height: 1.6;">')
+                advice_text = advice_text.replace('\n', '<br>')
+                
+                # Wrap in paragraph tags
+                if not advice_text.startswith('<'):
+                    advice_text = f'<p style="margin: 1rem 0; line-height: 1.6;">{advice_text}</p>'
+                
+                st.markdown(f"""
+                <div style="
+                    background: white;
+                    padding: 2rem;
+                    border-radius: 15px;
+                    box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+                    border-left: 5px solid #667eea;
+                    margin: 1rem 0;
+                    font-size: 1.05rem;
+                ">
+                    {advice_text}
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Enhanced recommendations section
+                if response.get('recommendations'):
+                    st.markdown("""
+                    <div style="
+                        background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+                        padding: 1rem;
+                        border-radius: 10px;
+                        margin: 1.5rem 0 1rem 0;
+                        text-align: center;
+                    ">
+                        <h3 style="color: white; margin: 0; font-size: 1.3rem;">💡 Hành động cụ thể được khuyến nghị</h3>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    for i, rec in enumerate(response['recommendations'], 1):
+                        # Color coding for different types of recommendations
+                        if any(word in rec.lower() for word in ['mua', 'buy', 'tăng']):
+                            color = '#00b894'
+                            icon = '🟢'
+                        elif any(word in rec.lower() for word in ['bán', 'sell', 'giảm']):
+                            color = '#e17055'
+                            icon = '🔴'
+                        else:
+                            color = '#6c5ce7'
+                            icon = '🔵'
+                        
+                        st.markdown(f"""
+                        <div style="
+                            background: {color}22;
+                            padding: 1rem;
+                            border-radius: 10px;
+                            margin: 0.8rem 0;
+                            border-left: 4px solid {color};
+                        ">
+                            <strong style="color: {color}; font-size: 1.1rem;">{icon} {i}. {rec}</strong>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                # Add timestamp and disclaimer
+                from datetime import datetime
+                current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                
+                # Get available models for display
+                available_models = list(main_agent.gemini_agent.available_models.keys())
+                models_display = ", ".join([m.upper() for m in available_models])
+                
+                st.markdown(f"""
+                <div style="
+                    background: #f8f9fa;
+                    padding: 1rem;
+                    border-radius: 8px;
+                    margin-top: 1.5rem;
+                    text-align: center;
+                    border: 1px solid #e9ecef;
+                ">
+                    <p style="color: #6c757d; margin: 0; font-size: 0.9rem;">
+                        🕐 Phân tích lúc: {current_time} | 🤖 AI Models: {models_display}<br>
+                        ⚠️ <strong>Lưu ý:</strong> Đây là thông tin tham khảo, không phải lời khuyên đầu tư tuyệt đối
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.success("✅ Đã xử lý câu hỏi thành công!")
+                
+            else:
+                # Enhanced error display
+                st.markdown("""
+                <div style="
+                    background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+                    padding: 1.5rem;
+                    border-radius: 12px;
+                    text-align: center;
+                    margin: 1rem 0;
+                ">
+                    <h4 style="color: #d63031; margin-bottom: 0.5rem;">❌ Không thể nhận phản hồi từ AI</h4>
+                    <p style="color: #2d3436; margin: 0;">Vui lòng thử lại hoặc kiểm tra kết nối</p>
+                </div>
+                """, unsafe_allow_html=True)
+                if response.get('error'):
+                    st.error(f"Chi tiết lỗi: {response['error']}")
+                    
+        except Exception as e:
+            st.markdown(f"""
+            <div style="
+                background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+                padding: 1.5rem;
+                border-radius: 12px;
+                text-align: center;
+                margin: 1rem 0;
+            ">
+                <h4 style="color: #d63031; margin-bottom: 0.5rem;">❌ Lỗi hệ thống</h4>
+                <p style="color: #2d3436; margin-bottom: 0.5rem;">{str(e)}</p>
+                <p style="color: #636e72; font-size: 0.9rem; margin: 0;">💡 Thử lại hoặc kiểm tra Gemini API key trong sidebar</p>
+            </div>
+            """, unsafe_allow_html=True)
 
 # Professional Footer
 st.markdown("---")
