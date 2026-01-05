@@ -21,9 +21,9 @@ class PricePredictor:
         self.ai_agent = None  # Will be set by main_agent
         self.crewai_collector = None  # Will be set from vn_api
         self.prediction_periods = {
-            'short_term': [1, 2, 3],      # 1 ngày, 2 ngày, 3 ngày
-            'medium_term': [7, 10, 14],   # 1 tuần, 10 ngày, 2 tuần
-            'long_term': [30, 45, 60]     # 1 tháng, 45 ngày, 2 tháng
+            'short_term': [1, 3, 7],      # 1 ngày, 3 ngày, 1 tuần
+            'medium_term': [14, 30, 60],   # 2 tuần, 1 tháng, 2 tháng
+            'long_term': [90, 180, 365]    # 3 tháng, 6 tháng, 1 năm
         }
         
         # Initialize LSTM predictor if available
@@ -93,7 +93,7 @@ class PricePredictor:
                     # Get real stock news and data from CrewAI
                     stock_news = loop.run_until_complete(self.crewai_collector.get_stock_news(symbol, limit=5))
                     
-                    # Get available symbols to find company infomation
+                    # Get available symbols to find company info
                     symbols = loop.run_until_complete(self.crewai_collector.get_available_symbols())
                     company_info = next((s for s in symbols if s['symbol'] == symbol), {})
                     
@@ -137,7 +137,8 @@ class PricePredictor:
                 # Convert price_history to DataFrame for technical analysis
                 import pandas as pd
                 hist_data = pd.DataFrame(price_history)
-                current_price = stock_data.price
+                # CRITICAL FIX: Ensure current_price matches what app.py uses
+                current_price = float(stock_data.price)  # Ensure float conversion
                 data_source = "VNStock_Real" + ("_with_CrewAI" if real_stock_data else "")
             
             if hist_data.empty:
@@ -765,42 +766,37 @@ class PricePredictor:
                     # Tổng hợp các điều chỉnh bao gồm ML
                     total_change = base_change + ml_contribution + macd_adjustment + rsi_adjustment + bb_adjustment
                     
-                    # ENHANCED FIX: Ensure meaningful price changes with progressive scaling
-                    min_change_base = 0.008 if days == 1 else 0.005 if days <= 3 else 0.003  # Higher for short-term
-                    min_change = min_change_base * (1 + days / 100)  # Progressive scaling with time
+                    # ENHANCED FIX: Ensure meaningful price changes with better logic
+                    min_change = max(0.005, 0.002 * (days / 7))  # Minimum 0.5% or 0.2% per week
                     
                     if abs(total_change) < min_change:
-                        # Apply intelligent directional bias with time progression
+                        # Apply intelligent directional bias
                         trend_bias = 0
                         
-                        # RSI-based bias with time scaling
+                        # RSI-based bias
                         if rsi > 60:
-                            trend_bias += 0.3 * (1 + days / 365)
+                            trend_bias += 0.3
                         elif rsi > 50:
-                            trend_bias += 0.1 * (1 + days / 365)
+                            trend_bias += 0.1
                         elif rsi < 40:
-                            trend_bias -= 0.3 * (1 + days / 365)
+                            trend_bias -= 0.3
                         elif rsi < 50:
-                            trend_bias -= 0.1 * (1 + days / 365)
+                            trend_bias -= 0.1
                         
-                        # MACD-based bias with time scaling
+                        # MACD-based bias
                         if macd_signal > 0:
-                            trend_bias += 0.2 * (1 + days / 365)
+                            trend_bias += 0.2
                         else:
-                            trend_bias -= 0.2 * (1 + days / 365)
+                            trend_bias -= 0.2
                         
-                        # Add time-based progression factor
-                        time_progression = days / 30 * 0.1  # 0.1% per month base progression
-                        
-                        # Apply bias with time scaling and progression
+                        # Apply bias with time scaling
                         if trend_bias > 0:
-                            total_change = (min_change * (1 + trend_bias)) + time_progression
+                            total_change = min_change * (1 + trend_bias)
                         elif trend_bias < 0:
-                            total_change = -(min_change * (1 + abs(trend_bias))) - time_progression
+                            total_change = -min_change * (1 + abs(trend_bias))
                         else:
-                            # Neutral bias - progressive movement based on time
-                            direction = 1 if days % 3 == 0 else -1  # Alternating direction
-                            total_change = (min_change + time_progression) * direction * 0.7
+                            # Neutral bias - small random movement
+                            total_change = min_change * (1 if np.random.random() > 0.5 else -1) * 0.5
                     
                     # Enhanced max change calculation
                     base_max_change = max(0.03, min(0.4, volatility * 2.5 * (days / 30)))  # Minimum 3% max change
@@ -809,26 +805,16 @@ class PricePredictor:
                     
                     total_change = max(-max_change, min(max_change, total_change))
                     
-                    # FINAL VALIDATION: Ensure meaningful and progressive changes
-                    min_meaningful_change = 0.008 if days == 1 else 0.005 if days <= 3 else 0.003
+                    # FINAL VALIDATION: Ensure total_change is meaningful - FIXED for 1-day predictions
+                    min_meaningful_change = 0.008 if days == 1 else 0.005 if days <= 3 else 0.003  # Higher threshold for short-term
                     if abs(total_change) < min_meaningful_change:
                         direction = 1 if (rsi > 50 and macd_signal > 0) else -1
-                        
-                        # Progressive scaling based on time period
                         if days == 1:
                             total_change = 0.012 * direction  # 1.2% minimum for 1-day
                         elif days <= 3:
-                            total_change = 0.008 * direction * (1 + (days-1) * 0.2)  # Progressive for 2-3 days
-                        elif days <= 7:
-                            total_change = 0.015 * direction * (1 + (days-3) * 0.1)  # Progressive for week
-                        elif days <= 30:
-                            total_change = 0.025 * direction * (1 + (days-7) * 0.05)  # Progressive for month
+                            total_change = 0.008 * direction  # 0.8% minimum for 2-3 days
                         else:
-                            total_change = 0.040 * direction * (1 + (days-30) * 0.02)  # Progressive for longer periods
-                        
-                        # Add small random variation to avoid identical values
-                        random_variation = np.random.uniform(-0.002, 0.002) * (days / 30)
-                        total_change += random_variation
+                            total_change = 0.005 * direction * (1 + days / 100)  # Scale with time for longer periods
                     
                     predicted_price = current_price * (1 + total_change)
                     
@@ -853,24 +839,9 @@ class PricePredictor:
                     change_percent = round(total_change * 100, 2)
                     change_amount = round(predicted_price - current_price, 2)
                     
-                    # ENHANCED DEBUG: More detailed logging - ALWAYS show for troubleshooting
-                    print(f"🔍 {days}d: base={base_change:.4f}, total={total_change:.4f}, price={current_price:.2f}->{predicted_price:.2f}, change={change_percent}%")
-                    
-                    # Additional validation to ensure prices are actually different
-                    if hasattr(self, '_previous_predictions'):
-                        for prev_days, prev_price in self._previous_predictions:
-                            if abs(predicted_price - prev_price) < 0.01 and days != prev_days:
-                                print(f"⚠️ WARNING: {days}d price {predicted_price:.2f} too similar to {prev_days}d price {prev_price:.2f}")
-                                # Apply small adjustment
-                                adjustment = 0.5 * (days - prev_days) / abs(days - prev_days) if days != prev_days else 0.5
-                                predicted_price += adjustment
-                                change_percent = round(((predicted_price - current_price) / current_price) * 100, 2)
-                                change_amount = round(predicted_price - current_price, 2)
-                                print(f"🔧 Adjusted {days}d price to {predicted_price:.2f}")
-                    else:
-                        self._previous_predictions = []
-                    
-                    self._previous_predictions.append((days, predicted_price))
+                    # ENHANCED DEBUG: More detailed logging
+                    if hasattr(self, 'debug_mode') and self.debug_mode:
+                        print(f"🔍 {days}d: base={base_change:.4f}, total={total_change:.4f}, price={current_price:.2f}->{predicted_price:.2f}, change={change_percent}%")
                     
                     predictions[period_type][f"{days}_days"] = {
                         "price": round(predicted_price, 2),
@@ -884,17 +855,6 @@ class PricePredictor:
                         }
                     }
             
-            # Final validation: ensure all predictions are meaningfully different
-            print(f"📈 Final predictions summary:")
-            for timeframe, data in predictions.items():
-                for period, values in data.items():
-                    if 'price' in values:
-                        print(f"  {timeframe}.{period}: {values['price']:.2f} VND ({values.get('change_percent', 0):.2f}%)")
-            
-            # Clear previous predictions for next run
-            if hasattr(self, '_previous_predictions'):
-                delattr(self, '_previous_predictions')
-            
             return predictions
             
         except Exception as e:
@@ -904,8 +864,8 @@ class PricePredictor:
         """Simple price prediction for backward compatibility"""
         return self.predict_comprehensive(symbol, self.vn_api, self.stock_info)
     
-    def predict_price_enhanced(self, symbol: str, days: int = 30, risk_tolerance: int = 50, time_horizon: str = "Trung hạn", investment_amount: int = 10000000):
-        """Enhanced price prediction with LSTM priority and AI analysis"""
+    def predict_price_enhanced(self, symbol: str, days: int = 90, risk_tolerance: int = 50, time_horizon: str = "Trung hạn", investment_amount: int = 10000000):
+        """Enhanced price prediction with LSTM priority and AI analysis - includes short/medium/long term forecasts"""
         # Try LSTM first if available and prioritize it
         if self.lstm_predictor:
             try:
@@ -1002,10 +962,39 @@ class PricePredictor:
                 # If traditional fails, return LSTM only
                 return lstm_result
             
+            # CRITICAL FIX: Validate LSTM predictions against current price
+            current_price_lstm = lstm_result['current_price']
+            current_price_traditional = traditional_result.get('current_price', current_price_lstm)
+            
+            # If prices differ significantly, use traditional as reference
+            if abs(current_price_lstm - current_price_traditional) > current_price_traditional * 0.1:
+                print(f"⚠️ Price mismatch detected: LSTM={current_price_lstm:.2f}, Traditional={current_price_traditional:.2f}")
+                # Use traditional current price as reference
+                lstm_result['current_price'] = current_price_traditional
+                
+                # Validate and adjust LSTM predictions
+                lstm_predictions = lstm_result.get('predictions', {})
+                for timeframe, periods in lstm_predictions.items():
+                    for period, data in periods.items():
+                        predicted_price = data.get('price', current_price_traditional)
+                        # If prediction is unrealistic, adjust it
+                        if predicted_price > current_price_traditional * 2 or predicted_price < current_price_traditional * 0.5:
+                            print(f"🔧 Adjusting unrealistic LSTM prediction for {period}: {predicted_price:.2f} -> ", end="")
+                            # Apply reasonable bounds
+                            if predicted_price > current_price_traditional * 2:
+                                adjusted_price = current_price_traditional * 1.1  # Max 10% increase
+                            else:
+                                adjusted_price = current_price_traditional * 0.9  # Max 10% decrease
+                            
+                            data['price'] = round(adjusted_price, 2)
+                            data['change_percent'] = round(((adjusted_price - current_price_traditional) / current_price_traditional) * 100, 2)
+                            data['change_amount'] = round(adjusted_price - current_price_traditional, 2)
+                            print(f"{adjusted_price:.2f}")
+            
             # Create combined result
             combined_result = {
                 'symbol': symbol,
-                'current_price': lstm_result['current_price'],
+                'current_price': current_price_traditional,  # Use validated price
                 'market': traditional_result.get('market', 'Unknown'),
                 'data_source': f"LSTM + {traditional_result.get('data_source', 'Technical')}",
                 'analysis_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -1015,7 +1004,7 @@ class PricePredictor:
                 'trend_analysis': traditional_result.get('trend_analysis', {}),
                 'risk_analysis': traditional_result.get('risk_analysis', {}),
                 
-                # Use LSTM predictions as primary
+                # Use validated LSTM predictions
                 'predictions': lstm_result['predictions'],
                 'lstm_confidence': lstm_result['model_performance']['confidence'],
                 'lstm_method': lstm_result['method'],
@@ -1835,35 +1824,19 @@ REASONING: [giải thích ngắn]
         
         total_change *= volatility_boost
         
-        # Final validation with progressive scaling to ensure different values
+        # Final validation - ensure total_change is meaningful - SPECIAL handling for 1-day
         if days == 1:
             final_min_change = 0.012  # 1.2% absolute minimum for 1-day
         elif days <= 3:
-            final_min_change = 0.008 * (1 + (days-1) * 0.3)  # Progressive for 2-3 days
-        elif days <= 7:
-            final_min_change = 0.015 * (1 + (days-3) * 0.2)  # Progressive for week
-        elif days <= 30:
-            final_min_change = 0.025 * (1 + (days-7) * 0.1)  # Progressive for month
+            final_min_change = 0.008  # 0.8% absolute minimum for 2-3 days
         else:
-            final_min_change = 0.040 * (1 + (days-30) * 0.05)  # Progressive for longer periods
+            final_min_change = 0.005  # 0.5% absolute minimum for longer periods
             
         if abs(total_change) < final_min_change:
             direction = 1 if trend_multiplier > 0 else -1
-            
-            # Add time-based progression and small randomization
-            time_factor = 1 + (days / 365) * 0.5  # Up to 50% increase over a year
-            random_factor = 1 + np.random.uniform(-0.1, 0.1)  # ±10% randomization
-            
-            total_change = final_min_change * direction * market_regime_factor * time_factor * random_factor
-            print(f"🔧 Applied progressive minimum change for {days}d: {total_change:.4f}")
+            total_change = final_min_change * direction * market_regime_factor
+            print(f"🔧 Applied final minimum change for {days}d: {total_change:.4f}")
         
-        # Ensure no two consecutive periods have identical changes
-        if hasattr(self, '_last_change') and abs(total_change - self._last_change) < 0.001:
-            adjustment = 0.002 * (1 if total_change > 0 else -1) * (days / 30)
-            total_change += adjustment
-            print(f"🔧 Adjusted to avoid duplicate change: {total_change:.4f}")
-        
-        self._last_change = total_change
         return total_change
     
     def _apply_safe_change_logic(self, predicted_price, current_price):
@@ -1925,19 +1898,9 @@ REASONING: [giải thích ngắn]
             # Data quality score
             data_quality = min(100, len(data) / 252 * 100)  # Based on 1 year of data
             
-            # Enhanced volatility score (more balanced)
+            # Volatility score (lower volatility = higher confidence)
             volatility = indicators.get('volatility', 20)
-            # More lenient volatility scoring
-            if volatility < 15:
-                volatility_score = 90  # Very stable
-            elif volatility < 25:
-                volatility_score = 80  # Stable
-            elif volatility < 35:
-                volatility_score = 70  # Moderate
-            elif volatility < 50:
-                volatility_score = 60  # High but acceptable
-            else:
-                volatility_score = 50  # Very high but not zero
+            volatility_score = max(0, 100 - volatility * 2)
             
             # Trend consistency score
             trend_consistency = self._calculate_trend_consistency(data)
@@ -1959,14 +1922,14 @@ REASONING: [giải thích ngắn]
                 ml_confidence = ml_predictions.get('ml_confidence', 50)
                 ml_confidence_boost = (ml_confidence - 50) * 0.2  # 20% weight for ML confidence
             
-            # Enhanced confidence calculation with higher baseline
-            base_short = data_quality * 0.2 + volatility_score * 0.3 + trend_consistency * 0.3 + volume_score * 0.2 + 20  # +20 baseline
-            base_medium = data_quality * 0.3 + volatility_score * 0.2 + trend_consistency * 0.4 + volume_score * 0.1 + 25  # +25 baseline
-            base_long = data_quality * 0.4 + volatility_score * 0.1 + trend_consistency * 0.5 + 15  # +15 baseline
+            # Overall confidence for different timeframes with ML enhancement
+            base_short = data_quality * 0.2 + volatility_score * 0.3 + trend_consistency * 0.3 + volume_score * 0.2
+            base_medium = data_quality * 0.3 + volatility_score * 0.2 + trend_consistency * 0.4 + volume_score * 0.1
+            base_long = data_quality * 0.4 + volatility_score * 0.1 + trend_consistency * 0.5
             
-            scores['short_term'] = round(max(45, min(95, base_short + ml_confidence_boost)), 1)  # Min 45%
-            scores['medium_term'] = round(max(50, min(95, base_medium + ml_confidence_boost * 0.8)), 1)  # Min 50%
-            scores['long_term'] = round(max(40, min(95, base_long + ml_confidence_boost * 0.5)), 1)  # Min 40%
+            scores['short_term'] = round(max(10, min(95, base_short + ml_confidence_boost)), 1)
+            scores['medium_term'] = round(max(10, min(95, base_medium + ml_confidence_boost * 0.8)), 1)
+            scores['long_term'] = round(max(10, min(95, base_long + ml_confidence_boost * 0.5)), 1)
             
             # Add ML-specific metrics if available
             if ml_predictions and not ml_predictions.get('error'):
@@ -1980,7 +1943,7 @@ REASONING: [giải thích ngắn]
             return {"error": f"Confidence calculation error: {str(e)}"}
     
     def _calculate_trend_consistency(self, data):
-        """Tính toán tính nhất quán của xu hướng với scoring cải thiện"""
+        """Tính toán tính nhất quán của xu hướng"""
         try:
             # Calculate moving averages
             sma_5 = data['close'].rolling(5).mean()
@@ -1989,34 +1952,24 @@ REASONING: [giải thích ngắn]
             # Count consistent trend days in last 20 days
             recent_data = data.tail(20)
             consistent_days = 0
-            total_valid_days = 0
             
             for i in range(len(recent_data)):
                 if i < 5:  # Skip first 5 days due to SMA calculation
                     continue
                     
-                total_valid_days += 1
                 price = recent_data['close'].iloc[i]
                 sma5 = sma_5.iloc[recent_data.index[i]]
                 sma20 = sma_20.iloc[recent_data.index[i]]
                 
-                # Enhanced consistency check - more lenient
+                # Check if trend is consistent
                 if (price > sma5 > sma20) or (price < sma5 < sma20):
-                    consistent_days += 2  # Strong consistency
-                elif (price > sma5) == (sma5 > sma20):  # Same direction
-                    consistent_days += 1  # Moderate consistency
+                    consistent_days += 1
             
-            # Enhanced scoring with higher baseline
-            if total_valid_days > 0:
-                consistency_score = (consistent_days / (total_valid_days * 2)) * 100  # Max possible is 2 per day
-                consistency_score = min(100, consistency_score + 30)  # +30 baseline boost
-            else:
-                consistency_score = 65  # Higher default
-                
-            return max(50, consistency_score)  # Minimum 50%
+            consistency_score = (consistent_days / 15) * 100  # 15 valid days out of 20
+            return min(100, consistency_score)
             
         except Exception as e:
-            return 65  # Higher default score if calculation fails
+            return 50  # Default score if calculation fails
     
     def _analyze_risk_metrics(self, data):
         """Phân tích các chỉ số rủi ro"""
@@ -2328,8 +2281,8 @@ REASONING: [giải thích ngắn]
             # Priority 1: Try LSTM for intraday prediction
             if self.lstm_predictor and is_market_open:
                 try:
-                    print(f"🧠 Using LSTM for today's close price prediction: {symbol}")
-                    lstm_result = self.lstm_predictor.predict_with_ai_enhancement(symbol, 1)  # 1 day ahead
+                    print(f"🧠 Using LSTM for comprehensive price prediction: {symbol}")
+                    lstm_result = self.lstm_predictor.predict_with_ai_enhancement(symbol, 90)  # 90 days: short (1,3,7) + medium (14,30) + long (60) term
                     
                     if not lstm_result.get('error') and lstm_result['model_performance']['confidence'] > 15:
                         # LSTM successful for today's prediction

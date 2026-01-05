@@ -1,17 +1,96 @@
-from agents.price_predictor import PricePredictor
-from agents.ticker_news import TickerNews
-from agents.market_news import MarketNews
-from agents.investment_expert import InvestmentExpert
-from agents.risk_expert import RiskExpert
-from agents.stock_info import StockInfoDisplay
-from agents.international_news import InternationalMarketNews
-from gemini_agent import UnifiedAIAgent
-from src.data.vn_stock_api import VNStockAPI
-from src.data.sqlite_manager import SQLiteManager
-from src.utils.error_handler import handle_async_errors, AgentErrorHandler, validate_symbol
-from Architecture.architecture_manager import ArchitectureManager
-from Architecture.single_architecture_runner import SingleArchitectureRunner
-from fastapi.concurrency import run_in_threadpool
+# Import with error handling
+try:
+    from agents.price_predictor import PricePredictor
+    from agents.ticker_news import TickerNews
+    from agents.market_news import MarketNews
+    from agents.investment_expert import InvestmentExpert
+    from agents.risk_expert import RiskExpert
+    from agents.stock_info import StockInfoDisplay
+    from agents.international_news import InternationalMarketNews
+except ImportError as e:
+    print(f"⚠️ Some agents not available: {e}")
+    # Create dummy classes for missing agents
+    class DummyAgent:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: {"error": "Agent not available"}
+    
+    PricePredictor = DummyAgent
+    TickerNews = DummyAgent
+    MarketNews = DummyAgent
+    InvestmentExpert = DummyAgent
+    RiskExpert = DummyAgent
+    StockInfoDisplay = DummyAgent
+    InternationalMarketNews = DummyAgent
+
+try:
+    from unified_llm_agent import UnifiedLLMAgent
+except ImportError:
+    print("⚠️ Unified LLM agent not available")
+    class UnifiedLLMAgent:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: {"error": "Unified LLM agent not available"}
+
+try:
+    from src.data.vn_stock_api import VNStockAPI
+except ImportError:
+    print("⚠️ VNStockAPI not available")
+    class VNStockAPI:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: {"error": "VNStockAPI not available"}
+
+try:
+    from src.utils.error_handler import handle_async_errors, AgentErrorHandler, validate_symbol
+except ImportError:
+    print("⚠️ Error handler not available")
+    def handle_async_errors(default_return=None):
+        def decorator(func):
+            return func
+        return decorator
+    
+    class AgentErrorHandler:
+        @staticmethod
+        def handle_prediction_error(symbol, error):
+            return {"error": f"Prediction error for {symbol}: {error}"}
+        @staticmethod
+        def handle_news_error(symbol, error):
+            return {"error": f"News error for {symbol}: {error}"}
+        @staticmethod
+        def handle_risk_error(symbol, error):
+            return {"error": f"Risk error for {symbol}: {error}"}
+    
+    def validate_symbol(symbol):
+        return bool(symbol and len(symbol.strip()) > 0)
+
+try:
+    from fastapi.concurrency import run_in_threadpool
+except ImportError:
+    print("⚠️ FastAPI not available")
+    import asyncio
+    async def run_in_threadpool(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+try:
+    from architectures import ArchitectureManager
+except ImportError:
+    print("⚠️ Architecture manager not available")
+    class ArchitectureManager:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: {"error": "Architecture manager not available"}
+        def get_architecture_info(self):
+            return {
+                "ensemble_voting": "Bayesian inference từ 6 agents (fallback)",
+                "hierarchical": "Big Agent tổng hợp từ 6 agents (fallback)", 
+                "round_robin": "6 agents cải thiện tuần tự (fallback)"
+            }
+
 import asyncio
 import logging
 from datetime import datetime
@@ -19,9 +98,8 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 class MainAgent:
-    def __init__(self, vn_api: VNStockAPI, gemini_api_key: str = None, serper_api_key: str = None):
+    def __init__(self, vn_api: VNStockAPI, gemini_api_key: str = None, openai_api_key: str = None, llama_api_key: str = None, llama_base_url: str = None, serper_api_key: str = None):
         self.vn_api = vn_api
-        self.db = SQLiteManager()
         self.stock_info = StockInfoDisplay(vn_api)
         self.price_predictor = PricePredictor(vn_api, self.stock_info)
         self.ticker_news = TickerNews()
@@ -30,171 +108,134 @@ class MainAgent:
         self.risk_expert = RiskExpert(vn_api)
         self.international_news = InternationalMarketNews()
         
-        # Initialize Architecture Manager
-        agents_dict = {
-            'price_predictor': self.price_predictor,
-            'lstm_predictor': self.price_predictor,
-            'investment_expert': self.investment_expert,
-            'risk_expert': self.risk_expert,
-            'ticker_news': self.ticker_news,
-            'market_news': self.market_news
-        }
-        self.architecture_manager = ArchitectureManager(agents_dict)
-        self.single_architecture_runner = SingleArchitectureRunner(agents_dict)
-        
-        # Initialize Unified AI Agent - always create to check for Llama
-        try:
-            self.gemini_agent = UnifiedAIAgent(
-                gemini_api_key=gemini_api_key,
-                preferred_model="auto"
-            )
-            
-            # Test connection and show status
-            if self.gemini_agent.available_models:
-                connection_results = self.gemini_agent.test_connection()
-                active_models = [model for model, status in connection_results.items() if status]
-                model_info = self.gemini_agent.get_model_info()
-                print(f"✅ AI Models initialized: {', '.join(active_models)}")
-            else:
-                print("⚠️ No AI models available, checking Llama...")
-                # Still might have Llama available
-                
-        except Exception as e:
-            print(f"⚠️ AI initialization failed: {e}")
-            # Still create agent to check for Llama
+        # Initialize Unified LLM Agent with all API keys
+        self.llm_agent = None
+        if any([gemini_api_key, openai_api_key, llama_api_key]):
             try:
-                self.gemini_agent = UnifiedAIAgent()
-                if self.gemini_agent.available_models:
-                    print(f"📋 Local models available: {list(self.gemini_agent.available_models.keys())}")
-                else:
-                    print("📴 Running in offline mode")
-            except:
-                self.gemini_agent = None
-        
-        # Update VN API with CrewAI keys
-        if gemini_api_key or serper_api_key:
-            try:
-                self.vn_api.set_crewai_keys(gemini_api_key, serper_api_key)
-                print("✅ CrewAI integration enabled for real news")
-            except Exception as e:
-                print(f"⚠️ CrewAI setup failed: {e}")
-        
-        # Pass AI agent to other agents for enhanced capabilities
-        self._integrate_ai_with_agents()
-    
-    def _integrate_ai_with_agents(self):
-        """Integrate AI capabilities with all agents"""
-        if self.gemini_agent:
-            # Pass AI agent to agents that can benefit from it
-            if hasattr(self.price_predictor, 'set_ai_agent'):
-                self.price_predictor.set_ai_agent(self.gemini_agent)
-            if hasattr(self.investment_expert, 'set_ai_agent'):
-                self.investment_expert.set_ai_agent(self.gemini_agent)
-            if hasattr(self.risk_expert, 'set_ai_agent'):
-                self.risk_expert.set_ai_agent(self.gemini_agent)
-            if hasattr(self.ticker_news, 'set_ai_agent'):
-                self.ticker_news.set_ai_agent(self.gemini_agent)
-            if hasattr(self.market_news, 'set_ai_agent'):
-                self.market_news.set_ai_agent(self.gemini_agent)
-            if hasattr(self.international_news, 'set_ai_agent'):
-                self.international_news.set_ai_agent(self.gemini_agent)
-    
-    def set_gemini_api_key(self, gemini_api_key: str = None, openai_api_key: str = None, preferred_model: str = "auto"):
-        """Set or update AI API keys with model preference"""
-        try:
-            # Get existing keys if not provided
-            if self.gemini_agent:
-                current_gemini = getattr(self.gemini_agent, 'gemini_api_key', None)
-                current_openai = getattr(self.gemini_agent, 'openai_api_key', None)
-                gemini_api_key = gemini_api_key or current_gemini
-                openai_api_key = openai_api_key or current_openai
-            
-            # Create new agent with both keys and preference
-            self.gemini_agent = UnifiedAIAgent(
-                gemini_api_key=gemini_api_key, 
-                openai_api_key=openai_api_key,
-                preferred_model=preferred_model
-            )
-            
-            # Test connection only if models are available
-            if self.gemini_agent.available_models:
-                connection_results = self.gemini_agent.test_connection()
-                model_info = self.gemini_agent.get_model_info()
-                available_models = list(self.gemini_agent.available_models.keys())
-                
-                if model_info['is_active']:
-                    models_str = ", ".join(available_models)
-                    print(f"✅ AI Models updated: {models_str} (Preference: {preferred_model})")
-                    self._integrate_ai_with_agents()
-                    return True
-                else:
-                    print("⚠️ AI models not available, running in offline mode")
-                    self._integrate_ai_with_agents()
-                    return True  # Still return True for offline mode
-            else:
-                print("📴 No AI models available, system will use offline mode")
-                self._integrate_ai_with_agents()
-                return True  # Still return True for offline mode
-        except Exception as e:
-            print(f"⚠️ AI setup issue: {e} - Using offline mode")
-            # Create agent (may have Llama even without API keys)
-            try:
-                self.gemini_agent = UnifiedAIAgent(
+                self.llm_agent = UnifiedLLMAgent(
                     gemini_api_key=gemini_api_key,
                     openai_api_key=openai_api_key,
-                    preferred_model=preferred_model
+                    llama_api_key=llama_api_key,
+                    llama_base_url=llama_base_url
                 )
-                self._integrate_ai_with_agents()
+                status = self.llm_agent.get_agent_status()
+                available_agents = [name for name, info in status['agents'].items() if not info['offline_mode']]
+                print(f"✅ LLM Agents initialized: {', '.join(available_agents)} (Current: {status['current_agent']})")
+            except Exception as e:
+                print(f"⚠️ LLM initialization failed: {e}")
+                self.llm_agent = None
+        
+        # Update VN API with Multi-LLM CrewAI keys
+        if any([gemini_api_key, openai_api_key, llama_api_key]) or serper_api_key:
+            try:
+                self.vn_api.set_crewai_keys(gemini_api_key, openai_api_key, llama_api_key, llama_base_url, serper_api_key)
+                print("✅ Multi-LLM CrewAI integration enabled for real news")
+            except Exception as e:
+                print(f"⚠️ Multi-LLM CrewAI setup failed: {e}")
+        
+        # Pass LLM agent to other agents for enhanced capabilities
+        self._integrate_llm_with_agents()
+        
+        # Initialize Architecture Manager
+        self.architecture_manager = ArchitectureManager(vn_api, gemini_api_key or "")
+    
+    def _integrate_llm_with_agents(self):
+        """Integrate LLM capabilities with all agents"""
+        if self.llm_agent:
+            # Pass LLM agent to agents that can benefit from it
+            if hasattr(self.price_predictor, 'set_llm_agent'):
+                self.price_predictor.set_llm_agent(self.llm_agent)
+            if hasattr(self.investment_expert, 'set_llm_agent'):
+                self.investment_expert.set_llm_agent(self.llm_agent)
+            if hasattr(self.risk_expert, 'set_llm_agent'):
+                self.risk_expert.set_llm_agent(self.llm_agent)
+            if hasattr(self.ticker_news, 'set_llm_agent'):
+                self.ticker_news.set_llm_agent(self.llm_agent)
+            if hasattr(self.market_news, 'set_llm_agent'):
+                self.market_news.set_llm_agent(self.llm_agent)
+            if hasattr(self.international_news, 'set_llm_agent'):
+                self.international_news.set_llm_agent(self.llm_agent)
+            
+            # Update architecture manager with LLM agent
+            if hasattr(self, 'architecture_manager'):
+                # Try to get gemini key from agents dict
+                gemini_key = ''
+                if hasattr(self.llm_agent, 'agents') and isinstance(self.llm_agent.agents, dict):
+                    if 'gemini' in self.llm_agent.agents:
+                        gemini_agent = self.llm_agent.agents['gemini']
+                        gemini_key = getattr(gemini_agent, 'gemini_api_key', '')
+                self.architecture_manager = ArchitectureManager(self.vn_api, gemini_key)
+    
+    def set_llm_keys(self, gemini_api_key: str = None, openai_api_key: str = None, llama_api_key: str = None, llama_base_url: str = None):
+        """Set or update LLM API keys"""
+        try:
+            # Create new unified agent
+            self.llm_agent = UnifiedLLMAgent(
+                gemini_api_key=gemini_api_key,
+                openai_api_key=openai_api_key,
+                llama_api_key=llama_api_key,
+                llama_base_url=llama_base_url
+            )
+            
+            # Get agent status
+            status = self.llm_agent.get_agent_status()
+            available_agents = [name for name, info in status['agents'].items() if info.get('truly_available', False)]
+            offline_agents = [name for name, info in status['agents'].items() if info.get('has_models', False) and info.get('offline_mode', True)]
+            
+            if available_agents:
+                print(f"✅ LLM keys updated successfully. Online: {', '.join(available_agents)}")
+                if offline_agents:
+                    print(f"⚠️ Offline: {', '.join(offline_agents)} (quota/rate limit)")
+                self._integrate_llm_with_agents()
                 return True
-            except Exception as e2:
-                print(f"⚠️ Agent creation failed: {e2}")
-                self.gemini_agent = None
+            elif offline_agents:
+                print(f"⚠️ LLM agents initialized in offline mode: {', '.join(offline_agents)}")
+                print("💡 Reasons: API quota exceeded, invalid keys, or rate limits")
+                print("✅ System will work with offline fallback responses")
+                self._integrate_llm_with_agents()
                 return True
+            else:
+                print("❌ No LLM agents could be initialized")
+                print("💡 Please check your API keys and try again")
+                return False
+        except Exception as e:
+            print(f"❌ Failed to set LLM keys: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
 
     
-    def set_crewai_keys(self, gemini_api_key: str, serper_api_key: str = None, openai_api_key: str = None, preferred_model: str = "auto"):
-        """Set CrewAI API keys for real news collection with AI models"""
+    def set_crewai_keys(self, gemini_api_key: str = None, openai_api_key: str = None, 
+                       llama_api_key: str = None, llama_base_url: str = None, serper_api_key: str = None):
+        """Set Multi-LLM CrewAI API keys for real news collection"""
         try:
-            # Update AI agents with preference
-            if gemini_api_key or openai_api_key:
-                if self.gemini_agent:
-                    # Update existing agent with new keys and preference
-                    current_gemini = getattr(self.gemini_agent, 'gemini_api_key', None)
-                    current_openai = getattr(self.gemini_agent, 'openai_api_key', None)
-                    current_preference = getattr(self.gemini_agent, 'preferred_model', 'auto')
-                    
-                    self.gemini_agent = UnifiedAIAgent(
-                        gemini_api_key=gemini_api_key or current_gemini,
-                        openai_api_key=openai_api_key or current_openai,
-                        preferred_model=preferred_model or current_preference
-                    )
-                else:
-                    # Create new agent
-                    self.gemini_agent = UnifiedAIAgent(
-                        gemini_api_key=gemini_api_key,
-                        openai_api_key=openai_api_key,
-                        preferred_model=preferred_model
-                    )
-                
-                connection_results = self.gemini_agent.test_connection()
-                active_models = [model for model, status in connection_results.items() if status]
-                model_info = self.gemini_agent.get_model_info()
-                print(f"✅ AI Models updated: {', '.join(active_models)} (Preference: {preferred_model})")
-                self._integrate_ai_with_agents()
+            # Update LLM agent if needed
+            if any([gemini_api_key, openai_api_key, llama_api_key]) and not self.llm_agent:
+                self.llm_agent = UnifiedLLMAgent(
+                    gemini_api_key=gemini_api_key,
+                    openai_api_key=openai_api_key,
+                    llama_api_key=llama_api_key,
+                    llama_base_url=llama_base_url
+                )
+                self._integrate_llm_with_agents()
             
-            # Update VN API CrewAI integration with OpenAI support and model preference
-            success = self.vn_api.set_crewai_keys(gemini_api_key, serper_api_key, openai_api_key, preferred_model)
+            # Update VN API Multi-LLM CrewAI integration
+            success = self.vn_api.set_crewai_keys(gemini_api_key, openai_api_key, llama_api_key, llama_base_url, serper_api_key)
+            
+            # Update architecture manager
+            if gemini_api_key:
+                self.architecture_manager = ArchitectureManager(self.vn_api, gemini_api_key)
             
             if success:
-                print("✅ CrewAI integration updated successfully")
+                print("✅ Multi-LLM CrewAI integration updated successfully")
                 return True
             else:
-                print("⚠️ CrewAI integration not available")
+                print("⚠️ Multi-LLM CrewAI integration not available")
                 return False
                 
         except Exception as e:
-            print(f"❌ Failed to set CrewAI keys: {e}")
+            print(f"❌ Failed to set Multi-LLM CrewAI keys: {e}")
             return False
     
     @handle_async_errors(default_return={"error": "Lỗi hệ thống khi phân tích cổ phiếu"})
@@ -232,10 +273,6 @@ class MainAgent:
             tasks['price_prediction'] = run_in_threadpool(self._safe_get_price_prediction, symbol)
             tasks['risk_assessment'] = run_in_threadpool(self._safe_get_risk_assessment, symbol, risk_tolerance, time_horizon, investment_amount)
             
-            # Architecture tasks - always run all architectures for comprehensive analysis
-            tasks['multi_architecture_prediction'] = run_in_threadpool(self._safe_get_multi_architecture_prediction, symbol, {})
-            tasks['architecture_comparison'] = run_in_threadpool(self._safe_get_architecture_comparison, symbol, {})
-            
             # Add investment analysis for VN stocks too
             if market_type == 'Vietnam':
                 tasks['investment_analysis'] = run_in_threadpool(self._safe_get_investment_analysis, symbol, risk_tolerance, time_horizon, investment_amount)
@@ -261,19 +298,6 @@ class MainAgent:
             
             results['market_type'] = market_type
             results['analysis_timestamp'] = asyncio.get_event_loop().time()
-            
-            # Save analysis to database
-            try:
-                self.db.save_analysis(
-                    symbol=symbol,
-                    analysis_type='comprehensive',
-                    result=results,
-                    risk_tolerance=risk_tolerance,
-                    time_horizon=time_horizon,
-                    investment_amount=investment_amount
-                )
-            except Exception as e:
-                logger.warning(f"Failed to save analysis to database: {e}")
             
             logger.info(f"Completed analysis for {symbol}")
             return results
@@ -319,7 +343,7 @@ class MainAgent:
             return {"error": f"Lỗi nghiêm trọng khi lấy tổng quan thị trường: {str(e)}"}
     
     @handle_async_errors(default_return={"error": "Lỗi xử lý truy vấn"})
-    async def process_query(self, query: str, symbol: str = "", force_model: str = None):
+    async def process_query(self, query: str, symbol: str = ""):
         """Xử lý truy vấn từ người dùng với AI response"""
         if not query or not query.strip():
             return {"error": "Vui lòng nhập câu hỏi"}
@@ -327,7 +351,7 @@ class MainAgent:
         query = query.strip()
         symbol = symbol.strip().upper() if symbol else ""
         
-        logger.info(f"Processing query: '{query}' for symbol: '{symbol}' with force_model: {force_model}")
+        logger.info(f"Processing query: '{query}' for symbol: '{symbol}'")
         
         try:
             # Get comprehensive data for AI analysis
@@ -371,43 +395,45 @@ class MainAgent:
                         "ticker_news": results[3] if not isinstance(results[3], Exception) else None
                     }
             
-            # Use AI to generate expert advice with force_model support
-            if self.gemini_agent:
+            # Use LLM to generate expert advice
+            if self.llm_agent:
                 try:
-                    if force_model:
-                        # Use forced model if specified
-                        gemini_response = await run_in_threadpool(
-                            self.gemini_agent.generate_general_response, query, force_model
-                        )
-                    else:
-                        # Use default method
-                        gemini_response = await run_in_threadpool(
-                            self.gemini_agent.generate_expert_advice, query, symbol, data
-                        )
+                    llm_response = await run_in_threadpool(
+                        self.llm_agent.generate_response, 
+                        f"CÂU HỎI: {query}\nMÃ CỔ PHIẾU: {symbol}\nDỮ LIỆU: {data}", 
+                        "financial_advice"
+                    )
+                    ai_response = {
+                        "expert_advice": llm_response.get('response', 'Không có phân tích từ AI.'),
+                        "model_used": llm_response.get('model_used', 'unknown'),
+                        "recommendations": ["Phân tích được tạo bởi AI", "Luôn DYOR trước khi đầu tư"]
+                    }
                 except Exception as e:
-                    logger.error(f"AI error: {e}")
-                    gemini_response = {
-                        "expert_advice": f"Lỗi AI: {str(e)}",
-                        "recommendations": ["Thử lại sau", "Kiểm tra API key"]
+                    logger.error(f"LLM error: {e}")
+                    ai_response = {
+                        "expert_advice": f"Lỗi LLM AI: {str(e)}",
+                        "model_used": "error",
+                        "recommendations": ["Thử lại sau", "Kiểm tra API keys"]
                     }
             else:
-                gemini_response = {
-                    "expert_advice": "AI chưa được khởi tạo. Vui lòng nhập API key.",
-                    "recommendations": ["Nhập API key để sử dụng AI"]
+                ai_response = {
+                    "expert_advice": "LLM AI chưa được khởi tạo. Vui lòng nhập API keys.",
+                    "model_used": "none",
+                    "recommendations": ["Nhập Gemini/OpenAI/Llama API keys để sử dụng AI"]
                 }
 
             response = {
                 "query": query,
                 "symbol": symbol,
                 "response_type": "conversational",
-                "expert_advice": gemini_response.get("expert_advice", "Không có phân tích từ chuyên gia."),
-                "recommendations": gemini_response.get("recommendations", []),
+                "expert_advice": ai_response.get("expert_advice", "Không có phân tích từ chuyên gia."),
+                "model_used": ai_response.get("model_used", "none"),
+                "recommendations": ai_response.get("recommendations", []),
                 "data": data,
-                "force_model": force_model,
                 "timestamp": asyncio.get_event_loop().time()
             }
             
-            logger.info(f"Successfully processed query for {symbol} with model: {force_model or 'auto'}")
+            logger.info(f"Successfully processed query for {symbol}")
             return response
             
         except Exception as e:
@@ -417,13 +443,36 @@ class MainAgent:
     
     # Helper methods với error handling
     def _safe_get_price_prediction(self, symbol: str):
-        """Safely get price prediction with LSTM enhancement"""
+        """Safely get price prediction with LSTM enhancement and validation"""
         try:
             # Use LSTM-enhanced prediction if available
             if hasattr(self.price_predictor, 'lstm_predictor') and self.price_predictor.lstm_predictor:
-                return self.price_predictor.predict_price_enhanced(symbol)
+                result = self.price_predictor.predict_price_enhanced(symbol)
             else:
-                return self.price_predictor.predict_price(symbol)
+                result = self.price_predictor.predict_price(symbol)
+            
+            # CRITICAL FIX: Validate prediction results
+            if not result.get('error'):
+                current_price = result.get('current_price', 0)
+                predicted_price = result.get('predicted_price', current_price)
+                
+                # Check if prediction is reasonable (within 50% of current price)
+                if current_price > 0 and predicted_price > 0:
+                    price_ratio = predicted_price / current_price
+                    if price_ratio > 2.0 or price_ratio < 0.5:
+                        print(f"⚠️ Unrealistic prediction detected for {symbol}: {predicted_price:.2f} vs {current_price:.2f}")
+                        # Adjust to reasonable bounds
+                        if price_ratio > 2.0:
+                            result['predicted_price'] = round(current_price * 1.1, 2)  # Max 10% increase
+                        else:
+                            result['predicted_price'] = round(current_price * 0.9, 2)  # Max 10% decrease
+                        
+                        # Recalculate change percent
+                        result['change_percent'] = round(((result['predicted_price'] - current_price) / current_price) * 100, 2)
+                        result['validation_adjusted'] = True
+                        print(f"🔧 Adjusted prediction to: {result['predicted_price']:.2f} VND")
+            
+            return result
         except Exception as e:
             return AgentErrorHandler.handle_prediction_error(symbol, e)
     
@@ -544,30 +593,6 @@ class MainAgent:
         """Display price chart - delegate to stock_info"""
         return self.stock_info.display_price_chart(price_history, symbol)
     
-    def _safe_get_multi_architecture_prediction(self, symbol: str, data: dict):
-        """Safely get multi-architecture prediction"""
-        try:
-            return self.architecture_manager.predict_all_architectures(symbol, data)
-        except Exception as e:
-            logger.error(f"Multi-architecture prediction error for {symbol}: {e}")
-            return {"error": f"Lỗi dự đoán đa kiến trúc: {str(e)}"}
-    
-    def _safe_get_architecture_comparison(self, symbol: str, data: dict):
-        """Safely get architecture comparison"""
-        try:
-            return self.architecture_manager.get_architecture_comparison(symbol, data)
-        except Exception as e:
-            logger.error(f"Architecture comparison error for {symbol}: {e}")
-            return {"error": f"Lỗi so sánh kiến trúc: {str(e)}"}
-    
-    def _safe_get_single_architecture_prediction(self, architecture_name: str, symbol: str, data: dict):
-        """Safely get single architecture prediction"""
-        try:
-            return self.single_architecture_runner.run_single_architecture(architecture_name, symbol, data)
-        except Exception as e:
-            logger.error(f"Single architecture {architecture_name} error for {symbol}: {e}")
-            return {"error": f"Lỗi kiến trúc {architecture_name}: {str(e)}"}
-    
     def _get_risk_profile_name(self, risk_tolerance: int) -> str:
         """Get risk profile name from tolerance level"""
         if risk_tolerance <= 30:
@@ -576,5 +601,45 @@ class MainAgent:
             return "Cân bằng"
         else:
             return "Mạo hiểm"
+    
+    @handle_async_errors(default_return={"error": "Lỗi dự đoán giá với kiến trúc"})
+    async def predict_price_with_architecture(self, symbol: str, architecture: str = "ensemble_voting", timeframe: str = "1d"):
+        """Dự đoán giá sử dụng kiến trúc được chọn"""
+        if not symbol or not validate_symbol(symbol):
+            return {"error": "Mã cổ phiếu không hợp lệ"}
+        
+        symbol = symbol.upper().strip()
+        logger.info(f"Predicting price for {symbol} using {architecture} architecture")
+        
+        try:
+            result = await self.architecture_manager.predict_price(symbol, architecture, timeframe)
+            return result
+        except Exception as e:
+            logger.error(f"Architecture prediction error for {symbol}: {e}")
+            return {"error": f"Lỗi dự đoán với kiến trúc {architecture}: {str(e)}"}
+    
+    @handle_async_errors(default_return={"error": "Lỗi so sánh kiến trúc"})
+    async def compare_architectures(self, symbol: str, timeframe: str = "1d"):
+        """So sánh kết quả của cả 3 kiến trúc"""
+        if not symbol or not validate_symbol(symbol):
+            return {"error": "Mã cổ phiếu không hợp lệ"}
+        
+        symbol = symbol.upper().strip()
+        logger.info(f"Comparing architectures for {symbol}")
+        
+        try:
+            result = await self.architecture_manager.compare_architectures(symbol, timeframe)
+            return result
+        except Exception as e:
+            logger.error(f"Architecture comparison error for {symbol}: {e}")
+            return {"error": f"Lỗi so sánh kiến trúc: {str(e)}"}
+    
+    def get_architecture_info(self):
+        """Lấy thông tin về các kiến trúc"""
+        return self.architecture_manager.get_architecture_info()
+    
+    def get_architecture_performance(self):
+        """Lấy thống kê hiệu suất các kiến trúc"""
+        return self.architecture_manager.get_performance_stats()
     
 

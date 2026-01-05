@@ -1,9 +1,4 @@
-# Hệ thống Multi-Agent Viet Nam Stock
-
-<!-- Thông tin tác giả -->
-**Tác giả:** Nguyễn Minh Dương  
-**Mã sinh viên:** 23010441  
-**Nhóm:** 11
+# 🇻🇳 Duong AI Trading Pro
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com)
@@ -11,33 +6,61 @@
 [![Gemini](https://img.shields.io/badge/Google-Gemini-orange.svg)](https://ai.google.dev)
 [![CrewAI](https://img.shields.io/badge/CrewAI-0.117+-purple.svg)](https://crewai.com)
 
-> **Hệ thống phân tích đầu tư chứng khoán thông minh với 6 AI Agents + Gemini AI + CrewAI + LSTM Neural Network**
+> **Intelligent stock investment analysis system with 6 AI Agents + Gemini AI + CrewAI + LSTM Neural Network**
 
-## 🎯 Tổng quan
+## 🎯 Overview
 
-**Hệ thống Multi-Agent Viet Nam Stock** là hệ thống phân tích đầu tư chứng khoán hoàn chỉnh, tích hợp 6 AI Agents chuyên nghiệp, Gemini AI, và mạng neural LSTM để cung cấp phân tích toàn diện cho thị trường chứng khoán Việt Nam và quốc tế.
+**Duong AI Trading Pro** is a comprehensive stock investment analysis system that integrates 6 professional AI Agents, Gemini AI, and LSTM neural networks to provide comprehensive analysis for Vietnamese and international stock markets.
 
-### ✨ Tính năng nổi bật
+### ✨ Key Features
 
-- 🤖 **6 AI Agents chuyên nghiệp** với phân tích cá nhân hóa
-- 🧠 **Gemini AI Chatbot** với khả năng offline fallback
-- 🔮 **LSTM Neural Network** cho dự đoán giá nâng cao
-- 📊 **Dữ liệu real-time** từ VNStock API và CrewAI
-- 🚀 **FastAPI Backend** + **Streamlit Frontend** với 6 tabs chuyên nghiệp
-- 📈 **Phân tích kỹ thuật & cơ bản** với số liệu chính xác
-- ⚙️ **Cài đặt đầu tư cá nhân** (thời gian + mức độ rủi ro)
-- 🎨 **Giao diện đẹp mắt** với Bootstrap integration
+- 🤖 **6 Professional AI Agents** with personalized analysis
+- 🧠 **Gemini AI Chatbot** with offline fallback capability
+- 🔮 **LSTM Neural Network** for advanced price prediction
+- 📊 **Real-time data** from VNStock API and CrewAI
+- 🚀 **FastAPI Backend** + **Streamlit Frontend** with 6 professional tabs
+- 📈 **Technical & Fundamental Analysis** with accurate metrics
+- ⚙️ **Personal Investment Settings** (time horizon + risk tolerance)
+- 🎨 **Beautiful Interface** with Bootstrap integration
 
-## 🤖 Đội ngũ 6 AI Agents
+## 🔍 CrewAI - 2 Operating Modes
 
-| Agent | Chức năng | Mô tả | Tính năng đặc biệt |
-|-------|-----------|-------|-------------------|
-| 📈 **PricePredictor** | Dự đoán giá | LSTM + Technical Analysis cho dự báo giá | LSTM Neural Network, Multi-timeframe |
-| 💼 **InvestmentExpert** | Chuyên gia đầu tư | Phân tích cơ bản và khuyến nghị BUY/SELL/HOLD | Real financial ratios, AI-enhanced |
-| ⚠️ **RiskExpert** | Quản lý rủi ro | Đánh giá rủi ro với VaR, Beta, Sharpe ratio | Advanced risk metrics, AI advice |
-| 📰 **TickerNews** | Tin tức cổ phiếu | Crawl tin tức từ CafeF, VietStock | Multi-source crawling, Sentiment analysis |
-| 🌍 **MarketNews** | Tin tức thị trường | Risk-based news filtering | Underground news, Risk-adjusted content |
-| 🏢 **StockInfo** | Thông tin chi tiết | Hiển thị metrics và charts chuyên nghiệp | Real-time data, Interactive charts |
+### **Mode 1: Direct Serper Search (Independent - Recommended)**
+- **Only needs**: Serper API key
+- **No need**: Gemini/OpenAI/Llama API
+- **Features**: Direct news search from Serper
+- **Advantages**: Fast, simple, no LLM dependency
+- **Suitable for**: Users who only need real news
+
+### **Mode 2: LLM-Enhanced Search (Advanced)**
+- **Needs**: Serper API + (Gemini or OpenAI or Llama)
+- **Features**: AI analysis and news summarization
+- **Advantages**: Deeper analysis, sentiment analysis
+- **Suitable for**: Users who want AI-assisted analysis
+
+```python
+# Chế độ 1: Chỉ Serper (không LLM)
+collector = CrewAIDataCollector(serper_api_key="your_key")
+# ➡️ CrewAI: Serper only (Direct search mode - no LLM)
+
+# Chế độ 2: Serper + LLM
+collector = CrewAIDataCollector(
+    gemini_api_key="your_key",
+    serper_api_key="your_key"
+)
+# ➡️ CrewAI: gemini + Serper (LLM mode)
+```
+
+## 🤖 Team of 6 AI Agents
+
+| Agent | Function | Description | Special Features |
+|-------|----------|-------------|------------------|
+| 📈 **PricePredictor** | Price Prediction | LSTM + Technical Analysis for price forecasting | LSTM Neural Network, Multi-timeframe |
+| 💼 **InvestmentExpert** | Investment Expert | Fundamental analysis and BUY/SELL/HOLD recommendations | Real financial ratios, AI-enhanced |
+| ⚠️ **RiskExpert** | Risk Management | Risk assessment with VaR, Beta, Sharpe ratio | Advanced risk metrics, AI advice |
+| 📰 **TickerNews** | Stock News | Crawl news from CafeF, VietStock | Multi-source crawling, Sentiment analysis |
+| 🌍 **MarketNews** | Market News | Risk-based news filtering | Underground news, Risk-adjusted content |
+| 🏢 **StockInfo** | Detailed Information | Display professional metrics and charts | Real-time data, Interactive charts |
 
 ## 🏗️ Kiến trúc hệ thống
 
@@ -79,152 +102,178 @@ agentvnstock/
 └── app.py                           # Streamlit frontend (6 tabs)
 ```
 
-## 🚀 Cài đặt nhanh
+## 🚀 Quick Setup
 
 ### 1. Clone repository
 ```bash
-git clone https://github.com/nminduo2k5/agentvnstock.git
-cd agentvnstock
+git clone https://github.com/nminduo2k5/Multi-agentVNstock.git
+cd Multi-agentVNstock
 ```
 
-### 2. Cài đặt dependencies
+### 2. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Chạy ứng dụng
+### 3. Run the application
 
-#### Streamlit Frontend (Khuyến nghị)
+#### Main Application (Recommended)
+```bash
+streamlit run app_predict.py
+```
+
+#### Alternative Streamlit Frontend
 ```bash
 streamlit run app.py
 ```
 
-### 4. Cấu hình API (trong ứng dụng)
-- Mở sidebar trong Streamlit
-- Nhập **Gemini API key** (miễn phí tại [Google AI Studio](https://aistudio.google.com/apikey))
-- Nhập **Serper API key** (tùy chọn, tại [Serper.dev](https://serper.dev/api-key))
-- Click **"🔧 Cài đặt Gemini"** hoặc **"🚀 Cài đặt CrewAI"**
+#### FastAPI Backend (Optional)
+```bash
+python api.py
+# Or
+uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+```
 
-## 📱 Giao diện 6 Tabs chuyên nghiệp
+### 4. API Configuration (in application)
+- Open sidebar in Streamlit
+- **Gemini API key** (optional, free at [Google AI Studio](https://aistudio.google.com/apikey))
+- **Serper API key** (recommended for real news, at [Serper.dev](https://serper.dev/api-key))
+- Click **"🔧 Setup Gemini"** or **"🚀 Setup CrewAI"**
 
-### **Tab 1: 📊 Phân tích cổ phiếu**
-- **🚀 Phân tích toàn diện**: Tất cả 6 agents + LSTM
-- **📈 Dự đoán giá**: LSTM Neural Network + Technical Analysis
-- **💼 Phân tích đầu tư**: BUY/SELL/HOLD với real financial ratios
-- **⚠️ Đánh giá rủi ro**: VaR, Beta, Sharpe ratio, Max Drawdown
+**Note**: CrewAI can operate independently with only Serper API key (no need for Gemini/OpenAI/Llama)
+
+## 📱 6 Professional Tabs Interface
+
+### **Tab 1: 📊 Stock Analysis**
+- **🚀 Comprehensive Analysis**: All 6 agents + LSTM
+- **📈 Price Prediction**: LSTM Neural Network + Technical Analysis
+- **💼 Investment Analysis**: BUY/SELL/HOLD with real financial ratios
+- **⚠️ Risk Assessment**: VaR, Beta, Sharpe ratio, Max Drawdown
 
 ### **Tab 2: 💬 AI Chatbot**
-- **Gemini AI**: Phân tích chuyên sâu với ngôn ngữ tự nhiên
-- **Offline Fallback**: Vẫn hoạt động khi hết quota API
-- **Gợi ý câu hỏi**: 5 câu hỏi mẫu thông dụng
-- **Phản hồi thông minh**: Format tự động với màu sắc và icon
+- **Gemini AI**: In-depth analysis with natural language
+- **Offline Fallback**: Still works when API quota is exhausted
+- **Question Suggestions**: 5 common sample questions
+- **Smart Responses**: Auto-formatting with colors and icons
 
-### **Tab 3: 📈 Thị trường VN**
-- **VN-Index Real-time**: Dữ liệu từ VNStock API
-- **Top movers**: Tăng/giảm mạnh với styling đẹp
-- **37+ cổ phiếu VN**: CrewAI tìm kiếm real-time hoặc static fallback
-- **Market overview**: Tin tức và sentiment analysis
+### **Tab 3: 📈 VN Market**
+- **VN-Index Real-time**: Data from VNStock API
+- **Top movers**: Strong gainers/losers with beautiful styling
+- **37+ VN stocks**: CrewAI real-time search or static fallback
+- **Market overview**: News and sentiment analysis
 
-### **Tab 4: 📰 Tin tức cổ phiếu**
+### **Tab 4: 📰 Stock News**
 - **Multi-source crawling**: CafeF, VietStock, VCI
-- **AI sentiment analysis**: Phân tích tâm lý thị trường
-- **Priority highlighting**: Tin quan trọng được đánh dấu
+- **AI sentiment analysis**: Market sentiment analysis
+- **Priority highlighting**: Important news highlighted
 - **Real-time updates**: CrewAI integration
 
-### **Tab 5: 🏢 Thông tin công ty**
-- **Company overview**: Thông tin chi tiết từ CrewAI
+### **Tab 5: 🏢 Company Information**
+- **Company overview**: Detailed information from CrewAI
 - **Financial metrics**: P/E, P/B, EPS, Dividend yield
-- **Interactive charts**: Price history với Plotly
+- **Interactive charts**: Price history with Plotly
 - **Enhanced display**: Professional styling
 
-### **Tab 6: 🌍 Tin tức thị trường**
-- **Risk-based filtering**: Tin tức theo hồ sơ rủi ro
-- **Underground news**: Tin nội gián từ F319, F247, FB Groups
+### **Tab 6: 🌍 Market News**
+- **Risk-based filtering**: News according to risk profile
+- **Underground news**: Insider news from F319, F247, FB Groups
 - **Official news**: CafeF, VnEconomy, DanTri
-- **Smart categorization**: Tự động phân loại theo risk profile
+- **Smart categorization**: Auto-categorization by risk profile
 
 ## 🧠 LSTM Neural Network
 
-### **Tính năng LSTM nâng cao:**
-- **18 mô hình ML**: Từ basic LSTM đến Transformer
-- **Multi-timeframe prediction**: 1 ngày đến 1 năm
-- **Confidence scoring**: Đánh giá độ tin cậy dự đoán
-- **AI enhancement**: Kết hợp với Gemini AI
-- **Real-time training**: Cập nhật mô hình liên tục
+### **Advanced LSTM Features:**
+- **18 ML models**: From basic LSTM to Transformer
+- **Multi-timeframe prediction**: 1 day to 1 year
+- **Confidence scoring**: Prediction reliability assessment
+- **AI enhancement**: Integration with Gemini AI
+- **Real-time training**: Continuous model updates
 
-
-
-## ⚙️ Cài đặt đầu tư cá nhân
-
-### **🕐 Thời gian đầu tư:**
-- **Ngắn hạn**: 1-3 tháng (Focus: Technical analysis)
-- **Trung hạn**: 3-12 tháng (Balance: Technical + Fundamental)
-- **Dài hạn**: 1+ năm (Focus: Fundamental analysis)
-
-### **⚠️ Mức độ rủi ro (0-100):**
-- **0-30**: 🟢 Thận trọng (Blue-chip, dividend stocks)
-- **31-70**: 🟡 Cân bằng (Mixed portfolio)
-- **71-100**: 🔴 Mạo hiểm (Growth stocks, underground news)
-
-### **💰 Số tiền đầu tư:**
-- **Từ 1 triệu đến 10 tỷ VND**
-- **Position sizing**: Tự động tính toán tỷ trọng
-- **Risk management**: Stop-loss và take-profit thông minh
-
-## 🛡️ Tính năng Offline Fallback
-
-### **Khi hết quota Gemini API:**
-- ✅ Hệ thống **KHÔNG crash**
-- ✅ Vẫn trả lời câu hỏi với nội dung hữu ích
-- ✅ Thông báo rõ ràng về tình trạng
-- ✅ Hướng dẫn user cách xử lý
-
-### **Phản hồi offline thông minh:**
+### **Available Models:**
 ```
-📈 PHÂN TÍCH OFFLINE:
-Do Gemini API đã hết quota, hệ thống chuyển sang chế độ offline...
-
-💡 Nguyên tắc đầu tư cơ bản:
-- P/E < 15 thường được coi là hấp dẫn
-- Đa dạng hóa danh mục để giảm rủi ro
-- Chỉ đầu tư số tiền có thể chấp nhận mất
-
-⏰ Quota thường reset sau 24 giờ
+1. LSTM Basic                    11. Bidirectional LSTM Seq2Seq
+2. Bidirectional LSTM           12. LSTM Seq2Seq VAE
+3. LSTM 2-Path                  13. GRU Seq2Seq
+4. GRU                          14. Bidirectional GRU Seq2Seq
+5. Bidirectional GRU            15. GRU Seq2Seq VAE
+6. GRU 2-Path                   16. Attention (Transformer)
+7. Vanilla RNN                  17. CNN Seq2Seq
+8. Bidirectional Vanilla        18. Dilated CNN Seq2Seq
+9. Vanilla 2-Path
+10. LSTM Seq2Seq
 ```
 
-## 📊 Cổ phiếu được hỗ trợ
+## ⚙️ Personal Investment Settings
 
-### 🏦 Ngân hàng (7 mã)
+### **🕐 Investment Time Horizon:**
+- **Short-term**: 1-3 months (Focus: Technical analysis)
+- **Medium-term**: 3-12 months (Balance: Technical + Fundamental)
+- **Long-term**: 1+ years (Focus: Fundamental analysis)
+
+### **⚠️ Risk Tolerance (0-100):**
+- **0-30**: 🟢 Conservative (Blue-chip, dividend stocks)
+- **31-70**: 🟡 Balanced (Mixed portfolio)
+- **71-100**: 🔴 Aggressive (Growth stocks, underground news)
+
+### **💰 Investment Amount:**
+- **From 1 million to 10 billion VND**
+- **Position sizing**: Automatic proportion calculation
+- **Risk management**: Smart stop-loss and take-profit
+
+## 🛡️ Offline Fallback Feature
+
+### **When Gemini API quota is exhausted:**
+- ✅ System **DOES NOT crash**
+- ✅ Still answers questions with useful content
+- ✅ Clear status notifications
+- ✅ User guidance on how to handle
+
+### **Smart offline responses:**
+```
+📈 OFFLINE ANALYSIS:
+Due to Gemini API quota exhaustion, system switched to offline mode...
+
+💡 Basic investment principles:
+- P/E < 15 is usually considered attractive
+- Diversify portfolio to reduce risk
+- Only invest money you can afford to lose
+
+⏰ Quota usually resets after 24 hours
+```
+
+## 📊 Supported Stocks
+
+### 🏦 Banking (7 stocks)
 **VCB** • **BID** • **CTG** • **TCB** • **ACB** • **MBB** • **VPB**
 
-### 🏢 Bất động sản (5 mã)
+### 🏢 Real Estate (5 stocks)
 **VIC** • **VHM** • **VRE** • **DXG** • **NVL**
 
-### 🛒 Tiêu dùng (5 mã)
+### 🛒 Consumer (5 stocks)
 **MSN** • **MWG** • **VNM** • **SAB** • **PNJ**
 
-### 🏭 Công nghiệp (3 mã)
+### 🏭 Industrial (3 stocks)
 **HPG** • **HSG** • **NKG**
 
-### ⚡ Tiện ích (3 mã)
+### ⚡ Utilities (3 stocks)
 **GAS** • **PLX** • **POW**
 
-### 💻 Công nghệ (2 mã)
+### 💻 Technology (2 stocks)
 **FPT** • **CMG**
 
-### 🚁 Vận tải (2 mã)
+### 🚁 Transportation (2 stocks)
 **VJC** • **HVN**
 
-### 💊 Y tế (2 mã)
+### 💊 Healthcare (2 stocks)
 **DHG** • **IMP**
 
-**Tổng cộng: 37+ cổ phiếu VN **
+**Total: 37+ VN stocks**
 
-## 💻 Sử dụng API
+## 💻 API Usage
 
 ### FastAPI Endpoints (20+ endpoints)
 
-#### Phân tích cổ phiếu
+#### Stock Analysis
 ```python
 # POST /analyze
 {
@@ -239,18 +288,18 @@ Do Gemini API đã hết quota, hệ thống chuyển sang chế độ offline..
 ```python
 # POST /query
 {
-  "query": "Phân tích VCB có nên mua không?",
+  "query": "Should I buy VCB stock?",
   "symbol": "VCB"
 }
 ```
 
-#### Dự đoán giá
+#### Price Prediction
 ```python
 # GET /predict/VCB
 # Response: LSTM + Technical analysis
 ```
 
-#### Đánh giá rủi ro
+#### Risk Assessment
 ```python
 # GET /risk/VCB
 # Response: VaR, Beta, Sharpe ratio
@@ -272,7 +321,7 @@ result = await main_agent.analyze_stock('VCB')
 response = await main_agent.process_query("Phân tích VCB", "VCB")
 ```
 
-## 📋 Requirements chính
+## 📋 Main Requirements
 
 ```
 # Core Framework
@@ -302,13 +351,13 @@ matplotlib>=3.7.0
 beautifulsoup4>=4.12.0
 ```
 
-## 🔧 Cấu hình nâng cao
+## 🔧 Advanced Configuration
 
-### Dynamic API Key (Không cần .env file)
+### Dynamic API Key (No .env file needed)
 ```python
-# Trong Streamlit sidebar
+# In Streamlit sidebar
 gemini_key = st.text_input("Gemini API Key", type="password")
-if st.button("🔧 Cài đặt"):
+if st.button("🔧 Setup"):
     main_agent.set_gemini_api_key(gemini_key)
 ```
 
@@ -320,12 +369,12 @@ curl http://localhost:8000/health
 
 ### CrewAI Real Data
 ```python
-# Tự động lấy symbols từ CrewAI
+# Auto-fetch symbols from CrewAI
 symbols = await vn_api.get_available_symbols()
-# Fallback to static nếu CrewAI fail
+# Fallback to static if CrewAI fails
 ```
 
-## 🎨 Giao diện mới
+## 🎨 New Interface
 
 ### **Bootstrap Integration:**
 - **Professional styling**: Card-based layout
@@ -343,38 +392,38 @@ symbols = await vn_api.get_available_symbols()
 
 ## 🔍 Troubleshooting
 
-### **Lỗi thường gặp:**
+### **Common Errors:**
 
 **1. Gemini API Error:**
 ```bash
-# Kiểm tra API key tại: https://aistudio.google.com/apikey
-# Đảm bảo API key có quyền truy cập Gemini 2.0 Flash
+# Check API key at: https://aistudio.google.com/apikey
+# Ensure API key has access to Gemini 2.0 Flash
 ```
 
 **2. VNStock Error:**
 ```bash
 pip install vnstock --upgrade
-# Hoặc sử dụng fallback data
+# Or use fallback data
 ```
 
 **3. CrewAI Error:**
 ```bash
 pip install crewai[tools] --upgrade
-# Kiểm tra Serper API key (optional)
+# Check Serper API key (optional)
 ```
 
 **4. LSTM Error:**
 ```bash
 pip install tensorflow scikit-learn --upgrade
-# LSTM sẽ fallback to traditional methods
+# LSTM will fallback to traditional methods
 ```
 
 ## 🚀 Roadmap
 
 ### **Version 2.0 (Current)**
-- ✅ 6 AI Agents hoàn chỉnh
+- ✅ 6 complete AI Agents
 - ✅ LSTM Neural Network
-- ✅ Gemini AI với offline fallback
+- ✅ Gemini AI with offline fallback
 - ✅ CrewAI real data integration
 - ✅ 37+ VN stocks support
 
@@ -391,24 +440,24 @@ pip install tensorflow scikit-learn --upgrade
 - 🔮 Social sentiment integration
 - 🔮 Automated trading signals
 
-## 🤝 Đóng góp
+## 🤝 Contributing
 
 1. Fork repository
-2. Tạo feature branch: `git checkout -b feature/amazing-feature`
+2. Create feature branch: `git checkout -b feature/amazing-feature`
 3. Commit changes: `git commit -m 'Add amazing feature'`
 4. Push branch: `git push origin feature/amazing-feature`
-5. Tạo Pull Request
+5. Create Pull Request
 
-## 📞 Hỗ trợ
+## 📞 Support
 
-- 🐛 **Issues**: [GitHub Issues](https://github.com/nminduo2k5/agentvnstock/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/nminduo2k5/agentvnstock/discussions)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/nminduo2k5/Multi-agentVNstock/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/nminduo2k5/Multi-agentVNstock/discussions)
 - 📧 **Email**: duongnguyenminh808@gmail.com or 23010441@st.phenikaa-uni.edu.vn
 
 
 ## 🙏 Acknowledgments
 
-- [Google Gemini](https://ai.google.dev) - AI chatbot với offline fallback
+- [Google Gemini](https://ai.google.dev) - AI chatbot with offline fallback
 - [CrewAI](https://crewai.com) - Multi-agent framework
 - [vnstock](https://github.com/thinh-vu/vnstock) - Vietnamese stock data
 - [Streamlit](https://streamlit.io) - Beautiful web framework
@@ -425,126 +474,23 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **🇻🇳 Made with ❤️ for Vietnamese investors**
 
-[![Star this repo](https://img.shields.io/github/stars/nminduo2k5/agentvnstock?style=social)](https://github.com/nminduo2k5/agentvnstock)
+[![Star this repo](https://img.shields.io/github/stars/nminduo2k5/Multi-agentVNstock?style=social)](https://github.com/nminduo2k5/Multi-agentVNstock)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
 **🚀 Version 2.0 - Professional AI Trading System**
 
-*"Đầu tư thông minh với sức mạnh của AI và Machine Learning!"* 💪
+*"Smart investing with the power of AI and Machine Learning!"* 💪
+
+### ⚠️ Disclaimer
+
+**Important Warning**: This is an analysis support tool, **NOT absolute investment advice**.
+
+- Data may not be 100% accurate
+- Always do your own research (DYOR)
+- Only invest money you can afford to lose
+- Author is not responsible for financial losses
+
+**"As long as you're breathing, there's still hope to recover!"** 🚀
+
 </div>
-
-# Development
-docker-start.bat start dev
-
-# Production  
-docker-start.bat start prod
-
-# Dừng tất cả
-docker-start.bat stop
-
-
-
-# Xem trạng thái
-docker-start.bat status
-
-# Xem logs
-docker-start.bat logs
-
-# Dừng tất cả
-docker-start.bat stop
-
-# Restart
-docker-start.bat restart dev
-
-Mở browser: http://localhost:8501
-
-Hoặc kiểm tra:
-
-🔗 API: http://localhost:8000
-
-📚 API Docs: http://localhost:8000/api/docs
-
-
-
-
-🎉 Hoàn thành tổng hợp Docker deployment!
-📁 Files đã tạo:
-DOCKER_DEPLOYMENT_GUIDE.md - Hướng dẫn chi tiết cả 2 hệ thống
-
-docker-master.bat - Script Windows quản lý cả 2 hệ thống
-
-docker-master.sh - Script Linux/Mac quản lý cả 2 hệ thống
-
-README_DOCKER_COMPLETE.md - Tài liệu hoàn chỉnh
-
-🚀 Master Commands (Mới):
-Windows:
-# Original System
-docker-master.bat original start    # Quick start
-docker-master.bat original dev      # Development
-docker-master.bat original prod     # Production
-
-# Microservices System  
-docker-master.bat micro dev         # Development
-docker-master.bat micro prod        # Production
-docker-master.bat micro basic       # Basic
-
-# Global Management
-docker-master.bat status            # All systems status
-docker-master.bat stop-all          # Stop everything
-docker-master.bat clean-all         # Clean everything
-
-Copy
-bash
-Linux/Mac:
-# Make executable first
-chmod +x docker-master.sh
-
-# Same commands as Windows
-./docker-master.sh original start
-./docker-master.sh micro dev
-./docker-master.sh status
-
-Copy
-bash
-🎯 Khuyến nghị sử dụng:
-🚀 Lần đầu sử dụng:
-docker-master.bat original start
-# Truy cập: http://localhost:8501
-
-Copy
-bash
-🔧 Phát triển code:
-docker-master.bat micro dev
-# Truy cập: http://localhost:8502
-# Redis UI: http://localhost:8081
-
-Copy
-bash
-🏭 Production:
-docker-master.bat micro prod
-# Truy cập: http://localhost:8502
-# Monitoring: http://localhost:3000
-
-Copy
-bash
-📊 So sánh 2 hệ thống:
-Tính năng	Original (8501)	Microservices (8502)
-Độ phức tạp	⭐⭐⭐ Đơn giản	⭐⭐ Vừa phải
-Performance	⭐⭐ Tốt	⭐⭐⭐ Xuất sắc
-Monitoring	⭐ Cơ bản	⭐⭐⭐ Nâng cao
-Scalability	⭐ Hạn chế	⭐⭐⭐ Cao
-RAM Usage	4GB	6GB
-✅ Tính năng Master Script:
-✅ Unified Management - Quản lý cả 2 hệ thống từ 1 script
-
-✅ Cross-platform - Windows (.bat) + Linux/Mac (.sh)
-
-✅ Health Monitoring - Check status tất cả services
-
-✅ Smart Cleanup - Clean resources an toàn
-
-✅ Help System - Hướng dẫn chi tiết tích hợp
-
-🎉 Giờ đây bạn có thể quản lý cả 2 hệ thống Docker một cách dễ dàng và chuyên nghiệp!

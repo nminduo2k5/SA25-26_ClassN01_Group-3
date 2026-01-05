@@ -21,6 +21,7 @@ def format_vn_number(value, decimals=2):
         return str(value)
     except:
         return str(value)
+
 class InvestmentExpert:
     def __init__(self, vn_api=None):
         self.name = "Investment Expert Agent"

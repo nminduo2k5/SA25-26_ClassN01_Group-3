@@ -1,77 +1,36 @@
-# Multi-stage Dockerfile for VNStock Multi-Agent System
-FROM python:3.11-slim as base
+# Use Python 3.11 slim image
+FROM python:3.11-slim
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    STREAMLIT_SERVER_HEADLESS=true \
-    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+# Set working directory
+WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
-    curl \
-    git \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-# Create app directory and user
-WORKDIR /app
-RUN useradd --create-home --shell /bin/bash appuser
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
-COPY requirements*.txt ./
+COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy the entire SRC directory
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p /app/data /app/logs /app/cache /app/models && \
-    chown -R appuser:appuser /app
+# Create .env file with default values if not exists
+RUN echo "GEMINI_API_KEY=your_gemini_api_key_here" > .env.example && \
+    echo "OPENAI_API_KEY=your_openai_api_key_here" >> .env.example && \
+    echo "LLAMA_API_KEY=your_llama_api_key_here" >> .env.example && \
+    echo "LLAMA_BASE_URL=https://api.together.xyz/v1" >> .env.example && \
+    echo "SERPER_API_KEY=your_serper_api_key_here" >> .env.example
 
-# Set permissions
-RUN chmod +x /app/*.py
-
-# Production stage
-FROM base as production
-
-# Switch to non-root user
-USER appuser
-
-# Expose port
+# Expose Streamlit port
 EXPOSE 8501
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
 
-# Default command
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--browser.gatherUsageStats=false"]
-
-# Development stage
-FROM base as development
-
-# Install development dependencies
-RUN pip install --no-cache-dir \
-    pytest \
-    black \
-    flake8 \
-    jupyter
-
-# Switch to non-root user
-USER appuser
-
-# Expose port
-EXPOSE 8501
-
-# Development command with hot reload
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.fileWatcherType=poll"]
+# Run Streamlit app
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]

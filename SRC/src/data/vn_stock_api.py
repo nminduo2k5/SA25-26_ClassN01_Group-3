@@ -11,13 +11,34 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 
-# CrewAI Integration
+# CrewAI Integration - Multi-LLM Support
 try:
     from .crewai_collector import get_crewai_collector
     CREWAI_INTEGRATION = True
 except ImportError:
     CREWAI_INTEGRATION = False
-    print("⚠️ CrewAI integration not available")
+    print("⚠️ CrewAI not available. Install with: pip install crewai[tools]")
+    
+    # Create dummy collector for fallback
+    def get_crewai_collector(gemini_key=None, serper_key=None):
+        class DummyCollector:
+            def __init__(self):
+                self.enabled = False
+        return DummyCollector()
+
+# Multi-LLM CrewAI Integration
+try:
+    from multi_llm_crewai_collector import get_multi_llm_collector
+    MULTI_LLM_CREWAI_INTEGRATION = True
+except ImportError:
+    MULTI_LLM_CREWAI_INTEGRATION = False
+    print("⚠️ Multi-LLM CrewAI not available")
+    
+    def get_multi_llm_collector(*args, **kwargs):
+        class DummyMultiLLMCollector:
+            def __init__(self):
+                self.enabled = False
+        return DummyMultiLLMCollector()
 
 try:
     # Force use installed vnstock by removing local path
@@ -29,9 +50,11 @@ try:
         sys.path.remove(local_vnstock)
     
     from vnstock import Vnstock
+    VNSTOCK_AVAILABLE = True
 except ImportError:
     print("WARNING: vnstock not available. Install with: pip install vnstock")
     Vnstock = None
+    VNSTOCK_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -55,21 +78,48 @@ class VNStockAPI:
     Sử dụng vnstock để lấy dữ liệu thật từ thị trường VN
     """
     
-    def __init__(self, gemini_api_key: str = None, serper_api_key: str = None):
+    def __init__(self, gemini_api_key: str = None, openai_api_key: str = None, 
+                 llama_api_key: str = None, llama_base_url: str = None, serper_api_key: str = None):
         # Initialize vnstock
-        self.stock = Vnstock() if Vnstock else None
+        if VNSTOCK_AVAILABLE:
+            try:
+                self.stock = Vnstock()
+                logger.info("✅ VNStock initialized successfully")
+            except Exception as e:
+                logger.error(f"❌ VNStock initialization failed: {e}")
+                self.stock = None
+        else:
+            self.stock = None
+            logger.warning("⚠️ VNStock not available - using fallback data")
         
         # Cache để avoid quá nhiều API calls
         self.cache = {}
         self.cache_duration = 60  # 1 minute
         
-        # CrewAI Integration for real news
-        if CREWAI_INTEGRATION:
+        # Multi-LLM CrewAI Integration for real news
+        try:
+            if MULTI_LLM_CREWAI_INTEGRATION:
+                self.multi_llm_collector = get_multi_llm_collector(
+                    gemini_api_key, openai_api_key, llama_api_key, llama_base_url, serper_api_key
+                )
+                if self.multi_llm_collector.enabled:
+                    available_llms = self.multi_llm_collector.get_available_llms()
+                    logger.info(f"✅ Multi-LLM CrewAI enabled with: {', '.join(available_llms)}")
+                else:
+                    logger.info("⚠️ Multi-LLM CrewAI disabled")
+            else:
+                self.multi_llm_collector = None
+                
+            # Fallback to original CrewAI
             self.crewai_collector = get_crewai_collector(gemini_api_key, serper_api_key)
-            logger.info("✅ CrewAI integration enabled")
-        else:
+            if hasattr(self.crewai_collector, 'enabled') and self.crewai_collector.enabled:
+                logger.info("✅ Original CrewAI integration enabled")
+            else:
+                logger.info("⚠️ Original CrewAI integration disabled")
+        except Exception as e:
+            logger.error(f"❌ CrewAI initialization failed: {e}")
             self.crewai_collector = None
-            logger.info("⚠️ CrewAI integration disabled")
+            self.multi_llm_collector = None
         
         # Vietnamese stock symbols mapping
         self.vn_stocks = {
@@ -178,18 +228,8 @@ class VNStockAPI:
             vnstock_logger = logging.getLogger('vnstock')
             vnstock_logger.setLevel(logging.ERROR)
             
-            # Tắt logging của vnstock.common để tránh spam "Không phải là mã chứng khoán"
-            vnstock_common_logger = logging.getLogger('vnstock.common')
-            vnstock_common_logger.setLevel(logging.ERROR)
-            
-            vnstock_data_logger = logging.getLogger('vnstock.common.data')
-            vnstock_data_logger.setLevel(logging.ERROR)
-            
-            vnstock_explorer_logger = logging.getLogger('vnstock.common.data.data_explorer')
-            vnstock_explorer_logger.setLevel(logging.ERROR)
-            
             if not self.is_vn_stock(symbol):
-                logger.debug(f"Symbol {symbol} not in supported VN stocks list")
+                logger.warning(f"Symbol {symbol} not in supported VN stocks list")
                 return None
             
             # Sử dụng vnstock với error handling
@@ -516,25 +556,38 @@ class VNStockAPI:
             'timestamp': datetime.now().isoformat()
         }
     
-    def set_crewai_keys(self, gemini_api_key: str, serper_api_key: str = None, openai_api_key: str = None, preferred_model: str = "auto"):
-        """Update CrewAI API keys with OpenAI support and model preference"""
-        if CREWAI_INTEGRATION:
-            try:
-                # Force recreate collector with new keys and preference
+    def set_crewai_keys(self, gemini_api_key: str = None, openai_api_key: str = None, 
+                       llama_api_key: str = None, llama_base_url: str = None, serper_api_key: str = None):
+        """Update Multi-LLM CrewAI API keys"""
+        try:
+            # Update Multi-LLM CrewAI if available
+            if MULTI_LLM_CREWAI_INTEGRATION and any([gemini_api_key, openai_api_key, llama_api_key]):
+                self.multi_llm_collector = get_multi_llm_collector(
+                    gemini_api_key, openai_api_key, llama_api_key, llama_base_url, serper_api_key
+                )
+                if self.multi_llm_collector and hasattr(self.multi_llm_collector, 'enabled') and self.multi_llm_collector.enabled:
+                    available_llms = self.multi_llm_collector.get_available_llms()
+                    logger.info(f"✅ Multi-LLM CrewAI updated with: {', '.join(available_llms)}")
+                    self.clear_symbols_cache()
+                    return True
+            
+            # Fallback to original CrewAI
+            if CREWAI_INTEGRATION and gemini_api_key:
                 from .crewai_collector import _collector_instance
                 import src.data.crewai_collector as crewai_module
                 crewai_module._collector_instance = None
-                self.crewai_collector = get_crewai_collector(gemini_api_key, serper_api_key, openai_api_key, preferred_model)
+                self.crewai_collector = get_crewai_collector(gemini_api_key, serper_api_key)
                 
-                # Clear cache to force fresh data
                 self.clear_symbols_cache()
-                
-                logger.info(f"✅ CrewAI keys updated - Enabled: {self.crewai_collector.enabled} (Preference: {preferred_model})")
-                return self.crewai_collector.enabled
-            except Exception as e:
-                logger.error(f"❌ Failed to update CrewAI keys: {e}")
-                return False
-        return False
+                if self.crewai_collector and hasattr(self.crewai_collector, 'enabled'):
+                    logger.info(f"✅ Original CrewAI updated - Enabled: {self.crewai_collector.enabled}")
+                    return self.crewai_collector.enabled
+            
+            logger.warning("⚠️ CrewAI integration not available - install with: pip install crewai[tools]")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Failed to update CrewAI keys: {e}")
+            return False
     
     def _is_cache_valid(self, cache_key: str) -> bool:
         """Check if cache is still valid"""
@@ -885,6 +938,31 @@ class VNStockAPI:
             'source': 'Mock',
             'timestamp': datetime.now().isoformat()
         }
+
+    async def compare_llm_analysis(self, symbol: str, task_type: str = "stock_news") -> Dict[str, Any]:
+        """So sánh kết quả từ nhiều LLM"""
+        if self.multi_llm_collector and self.multi_llm_collector.enabled:
+            return await self.multi_llm_collector.compare_llm_analysis(symbol, task_type)
+        else:
+            return {"error": "Multi-LLM not available"}
+    
+    def switch_llm_engine(self, llm_name: str) -> bool:
+        """Chuyển đổi LLM engine cho CrewAI"""
+        if self.multi_llm_collector and self.multi_llm_collector.enabled:
+            return self.multi_llm_collector.switch_llm(llm_name)
+        return False
+    
+    def get_available_llm_engines(self) -> List[str]:
+        """Lấy danh sách LLM engines có sẵn"""
+        if self.multi_llm_collector and self.multi_llm_collector.enabled:
+            return self.multi_llm_collector.get_available_llms()
+        return []
+    
+    def get_current_llm_engine(self) -> str:
+        """Lấy LLM engine hiện tại"""
+        if self.multi_llm_collector and self.multi_llm_collector.enabled:
+            return self.multi_llm_collector.current_llm
+        return "None"
 
 # Utility functions
 async def get_multiple_stocks(symbols: List[str]) -> Dict[str, VNStockData]:

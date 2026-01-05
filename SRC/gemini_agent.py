@@ -1,62 +1,219 @@
+import google.generativeai as genai
+import os
 import logging
 from typing import Dict, Any, Optional, List
 import asyncio
+import json
+import time
 from datetime import datetime
-from llm.unified_llm import UnifiedLLM
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Load API key from .env file
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+
+def get_gemini_model():
+    """Get Gemini model with unified version priority"""
+    if not GEMINI_API_KEY or GEMINI_API_KEY == "your_gemini_api_key_here":
+        print("⚠️ Chưa có API key → Bỏ qua Gemini (dùng giá hiện tại thay thế)")
+        return None
+
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+
+        # Unified model priority - Gemini 2.5 Flash as standard
+        priority = [
+            'gemini-2.5-flash',       # Primary: Latest stable (June 2025)
+            'gemini-2.5-pro',         # Most powerful
+            'gemini-flash-latest',    # Auto-updated latest
+            'gemini-2.0-flash',       # Previous stable
+            'gemini-2.0-flash-exp',   # Experimental
+            'gemini-1.5-flash'        # Legacy fallback
+        ]
+
+        print("📋 Đang kiểm tra các model có sẵn...")
+        available = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                name = m.name.replace("models/", "")
+                if name in priority:
+                    available.append(name)
+                    print(f"   ✓ {name}")
+
+        selected = None
+        for p in priority:
+            if p in available:
+                selected = p
+                break
+
+        if not selected and available:
+            selected = available[0]
+            print(f"⚠️ Dùng model mặc định: {selected}")
+
+        if selected:
+            model = genai.GenerativeModel(selected)
+            # Test nhanh
+            model.generate_content("Hello")
+            print(f"✅ Kết nối thành công với model: {selected}")
+            return model
+        else:
+            print("❌ Không tìm thấy model nào")
+            return None
+
+    except Exception as e:
+        print(f"❌ Lỗi kết nối: {e}")
+        print("   → Có thể hết quota free tier hôm nay, hoặc key cũ.")
+        return None
 class UnifiedAIAgent:
-    def __init__(self, gemini_api_key: str = None, openai_api_key: str = None, preferred_model: str = "auto"):
+    def __init__(self, gemini_api_key: str = None):
         """
-        Initialize AI Agent with Unified LLM system
+        Initialize AI Agent with Gemini AI
         """
-        self.llm = UnifiedLLM(gemini_api_key, openai_api_key, preferred_model)
-        self.preferred_model = preferred_model
-        self.offline_mode = len(self.llm.available_models) == 0
-    
-    @property
-    def available_models(self):
-        """Backward compatibility property"""
-        return self.llm.available_models
+        self.available_models = {}
+        self.current_model_name = None
+        self.model_capabilities = {
+            'gemini': {
+                'strengths': ['analysis', 'vietnamese', 'reasoning', 'financial_advice', 'prediction', 'technical_analysis', 'news_analysis', 'risk_assessment'],
+                'speed': 'fast',
+                'cost': 'free'
+            }
+        }
+        
+        # Initialize Gemini with user-provided API key only
+        # No hardcoded or environment variables used
+        
+        if gemini_api_key:
+            try:
+                genai.configure(api_key=gemini_api_key)
+                
+                # Unified model priority - Gemini 2.5 Flash as standard
+                model_names = [
+                    'gemini-2.5-flash',            # Primary: Latest stable (June 2025)
+                    'gemini-2.5-pro',              # Most powerful
+                    'gemini-flash-latest',         # Auto-updated latest
+                    'gemini-2.0-flash',            # Previous stable
+                    'gemini-2.0-flash-exp',        # Experimental
+                    'gemini-1.5-flash'             # Legacy fallback
+                ]
+                
+                model_initialized = False
+                for model_name in model_names:
+                    try:
+                        model = genai.GenerativeModel(model_name)
+                        # Skip test for quota-sensitive models
+                        if 'pro' in model_name.lower():
+                            # Just initialize without testing to avoid quota usage
+                            self.available_models['gemini'] = model
+                            self.gemini_api_key = gemini_api_key
+                            self.current_model_name = model_name
+                            logger.info(f"✅ Gemini AI initialized with model: {model_name} (no test)")
+                            model_initialized = True
+                            break
+                        else:
+                            # Test non-pro models
+                            test_response = model.generate_content("Hi")
+                            if test_response and test_response.text:
+                                self.available_models['gemini'] = model
+                                self.gemini_api_key = gemini_api_key
+                                self.current_model_name = model_name
+                                logger.info(f"✅ Gemini AI initialized with model: {model_name}")
+                                model_initialized = True
+                                break
+                    except Exception as e:
+                        error_msg = str(e).lower()
+                        if 'quota' in error_msg or '429' in error_msg:
+                            logger.warning(f"⚠️ Model {model_name} quota exceeded, trying next...")
+                        else:
+                            logger.warning(f"⚠️ Model {model_name} not available: {e}")
+                        continue
+                
+                if not model_initialized:
+                    # If no model works, still allow offline mode
+                    logger.warning("⚠️ No Gemini models available, will use offline mode")
+                    self.available_models = {}
+                    
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize Gemini: {str(e)}")
+                # Don't set available_models if initialization failed
+                self.available_models = {}
+        
+        # Allow initialization without models for offline mode
+        if not self.available_models:
+            logger.warning("⚠️ No AI models available, system will run in offline mode")
+            self.offline_mode = True
+        else:
+            self.offline_mode = False
     
     def test_connection(self):
         """Test AI API connections"""
-        return self.llm.test_all_connections()
+        results = {}
+        
+        if 'gemini' in self.available_models:
+            try:
+                response = self.available_models['gemini'].generate_content("Test")
+                if response and response.text:
+                    results['gemini'] = True
+                    logger.info("✅ Gemini connection test passed")
+                else:
+                    results['gemini'] = False
+                    logger.error("❌ Gemini returned empty response")
+            except Exception as e:
+                results['gemini'] = False
+                logger.error(f"❌ Gemini connection test failed: {str(e)}")
+        
+        if not any(results.values()):
+            raise ValueError("Gemini API connection test failed")
+        
+        return results
     
     def select_best_model(self, task_type: str) -> str:
-        """Select best model - backward compatibility"""
-        return self.llm._select_model() or 'offline'
+        """
+        Select the best available model for a specific task type
+        """
+        if 'gemini' in self.available_models:
+            return 'gemini'
+        
+        raise ValueError("Gemini AI model not available")
     
     def generate_with_model(self, prompt: str, model_name: str, max_tokens: int = 2000) -> str:
-        """Generate with specific model - backward compatibility"""
-        result = self.llm.generate(prompt, max_tokens, model_name)
-        if result['success']:
-            return result['response']
-        else:
-            raise Exception(result.get('error', 'Generation failed'))
+        """
+        Generate response using specified AI model
+        """
+        try:
+            if model_name == 'gemini' and 'gemini' in self.available_models:
+                response = self.available_models['gemini'].generate_content(prompt)
+                return response.text
 
-    def generate_with_fallback(self, prompt: str, task_type: str, max_tokens: int = 2000, force_model: str = None) -> Dict[str, Any]:
+            else:
+                raise ValueError(f"Model {model_name} not available.")
+                
+        except Exception as e:
+            logger.error(f"Error generating with {model_name}: {str(e)}")
+            raise
+
+    def generate_with_fallback(self, prompt: str, task_type: str, max_tokens: int = 2000) -> Dict[str, Any]:
         """
-        Generate response with automatic fallback
+        Generate response with automatic fallback to offline mode if primary fails
         """
-        if self.offline_mode:
+        # Check if we're already in offline mode
+        if getattr(self, 'offline_mode', True) or not self.available_models:
+            logger.info("📴 Using offline mode (no AI models available)")
             return self._generate_offline_fallback(prompt, task_type)
         
         try:
-            result = self.llm.generate(prompt, max_tokens, force_model)
-            
-            if result['success']:
-                return {
-                    'response': result['response'],
-                    'model_used': result['model'],
-                    'success': True
-                }
-            else:
-                return self._generate_offline_fallback(prompt, task_type)
-                
+            response = self.generate_with_model(prompt, 'gemini', max_tokens)
+            return {
+                'response': response,
+                'model_used': 'gemini',
+                'success': True
+            }
         except Exception as e:
-            logger.error(f"Generation failed: {e}")
+            logger.error(f"Gemini model failed: {str(e)}")
+            # Always use offline fallback when Gemini fails
             return self._generate_offline_fallback(prompt, task_type)
     
     def _generate_offline_fallback(self, prompt: str, task_type: str) -> Dict[str, Any]:
@@ -80,17 +237,16 @@ class UnifiedAIAgent:
             
             return {
                 'response': response,
-                'model_used': 'offline_mode',
+                'model_used': 'offline_fallback',
                 'success': True,
                 'quota_exceeded': True
             }
         except Exception as e:
-            logger.error(f"Offline fallback error: {e}")
             return {
-                'response': 'Hệ thống đang bảo trì. Vui lòng thử lại sau.',
-                'model_used': 'offline_mode',
-                'success': True,
-                'quota_exceeded': True
+                'response': f'Offline fallback failed: {str(e)}',
+                'model_used': 'offline_fallback',
+                'success': False,
+                'error': str(e)
             }
     
     def _generate_financial_advice_fallback(self, question: str) -> str:
@@ -135,345 +291,25 @@ Hãy đợi API reset hoặc tham khảo chuyên gia tài chính.
     
     def _generate_general_fallback(self, question: str) -> str:
         """
-        Generate comprehensive general query fallback with smart question analysis
+        Generate general query fallback when API quota exceeded
         """
-        question_lower = question.lower()
-        
-        # Specific stock analysis questions
-        if any(stock in question_lower for stock in ['vcb', 'hpg', 'vic', 'vhm']):
-            return self._generate_stock_specific_advice(question)
-        elif any(word in question_lower for word in ['so sánh', 'compare', 'tốt hơn']):
-            return self._generate_comparison_advice(question)
-        elif any(word in question_lower for word in ['người mới', 'bắt đầu', 'beginner']):
-            return self._generate_beginner_advice()
-        elif any(word in question_lower for word in ['rủi ro', 'risk', 'quản lý']):
-            return self._generate_risk_management_advice()
-        elif any(word in question_lower for word in ['đầu tư', 'investment', 'chiến lược']):
-            return self._generate_investment_strategy_advice()
-        elif any(word in question_lower for word in ['phân tích', 'analysis', 'triển vọng']):
-            return self._generate_analysis_advice()
-        elif any(word in question_lower for word in ['danh mục', 'portfolio', 'đa dạng']):
-            return self._generate_portfolio_advice()
-        else:
-            return f"""
-📈 **PHÂN TÍCH CHUYÊN GIA:**
+        return f"""
+📈 **PHÂN TÍCH OFFLINE:**
 
-**Về câu hỏi:** {question}
+Do Gemini API đã hết quota, tôi không thể phân tích chi tiết câu hỏi của bạn lúc này.
 
-💡 **Nguyên tắc đầu tư cơ bản:**
+**Câu hỏi của bạn:** {question}
 
-**1. 📊 Nghiên cứu trước khi đầu tư:**
-- Phân tích báo cáo tài chính: doanh thu, lợi nhuận, nợ phải trả
-- Đánh giá P/E, P/B, ROE, ROA so với trung bình ngành
-- Tìm hiểu về ban lãnh đạo và chiến lược phát triển
+💡 **Gợi ý đầu tư thực tiễn:**
+- Nghiên cứu kỹ báo cáo tài chính, so sánh với các doanh nghiệp cùng ngành.
+- Đa dạng hóa danh mục để giảm rủi ro, không đầu tư quá 20% vốn vào một mã.
+- Đặt mục tiêu lợi nhuận, điểm cắt lỗ rõ ràng cho từng vị thế.
+- Theo dõi tin tức, chính sách vĩ mô, các yếu tố ảnh hưởng đến thị trường.
+- Tham khảo ý kiến chuyên gia, cộng đồng đầu tư uy tín.
+- Luôn kiểm tra lại chiến lược khi thị trường biến động mạnh.
 
-**2. ⚖️ Quản lý rủi ro:**
-- Chỉ đầu tư tiền nhàn rỗi (không ảnh hưởng sinh hoạt)
-- Đa dạng hóa: không quá 20% vốn vào một mã
-- Đặt stop-loss: cắt lỗ khi giảm 10-15%
-
-**3. 🎯 Chiến lược đầu tư:**
-- Xác định mục tiêu: ngắn hạn (< 1 năm) hay dài hạn (> 3 năm)
-- Đầu tư định kỳ (DCA) để giảm rủi ro thời điểm
-- Kiên nhẫn và kỷ luật với kế hoạch đã đề ra
-
-**4. 📰 Theo dõi thông tin:**
-- Tin tức công ty và ngành
-- Chính sách kinh tế vĩ mô
-- Xu hướng thị trường toàn cầu
-
-⚠️ **Lưu ý:** Đây là kiến thức cơ bản. Luôn tham khảo chuyªn gia tài chính trước khi đầu tư.
-"""
-    
-    def _generate_stock_specific_advice(self, question: str) -> str:
-        """Generate advice for specific stock questions"""
-        question_lower = question.lower()
-        
-        if 'vcb' in question_lower:
-            return """
-🏦 **PHÂN TÍCH VCB (Vietcombank):**
-
-**📊 Ưu điểm:**
-- Ngân hàng lớn nhất Việt Nam theo vốn hóa
-- Thương hiệu mạnh, mạng lưới rộng
-- ROE ổn định 18-22%, NIM khoảng 3.5%
-- Cổ tức hấp dẫn 8-12%/năm
-
-**⚠️ Rủi ro:**
-- Nhạy cảm với chính sách tiền tệ
-- Cạnh tranh gay gắt trong ngành
-- Rủi ro tín dụng khi kinh tế suy giảm
-
-**🎯 Khuyến nghị:**
-- Phù hợp đầu tư dài hạn (> 2 năm)
-- Mua khi P/B < 2.0, P/E < 12
-- Đặt stop-loss 10% dưới giá mua
-- Theo dõi lãi suất và chính sách NHNN
-
-**📈 Mục tiêu giá:** 65,000-70,000 VND (6-12 tháng)
-"""
-        elif 'hpg' in question_lower:
-            return """
-🏢 **PHÂN TÍCH HPG (Hòa Phát):**
-
-**📊 Ưu điểm:**
-- Nhà sản xuất thép hàng đầu Việt Nam
-- Công nghệ hiện đại, chi phí cạnh tranh
-- Hưởng lợi từ phát triển hạ tầng
-- Biên lợi nhuận cải thiện
-
-**⚠️ Rủi ro:**
-- Chu kỳ ngành thép biến động mạnh
-- Phụ thuộc giá quặng sắt thế giới
-- Cạnh tranh từ thép nhập khẩu
-- Ảnh hưởng bởi chính sách môi trường
-
-**🎯 Khuyến nghị:**
-- Đầu tư theo chu kỳ ngành
-- Mua khi P/E < 8, P/B < 1.5
-- Theo dõi giá quặng sắt và nhu cầu xây dựng
-- Cẩn thận với biến động ngắn hạn
-
-**📈 Mục tiêu giá:** 28,000-32,000 VND (6-12 tháng)
-"""
-        else:
-            return """
-📈 **PHÂN TÍCH CỔ PHIẾU CỤ THỂ:**
-
-**🔍 Các bước phân tích:**
-1. **Kiểm tra cơ bản:** P/E, P/B, ROE, tăng trưởng
-2. **Đánh giá ngành:** Vị thế cạnh tranh, triển vọng
-3. **Phân tích kỹ thuật:** Xu hướng, hỗ trợ/kháng cự
-4. **Quản lý rủi ro:** Stop-loss, position size
-
-**🎯 Quyết định đầu tư:**
-- **MUA:** Khi cơ bản tốt + kỹ thuật tích cực
-- **GIỮ:** Khi cơ bản ổn định + kỹ thuật trung tính
-- **BÁN:** Khi cơ bản xấu + kỹ thuật tiêu cực
-
-⚠️ **Lưu ý:** Luôn đọc báo cáo tài chính gần nhất trước khi quyết định.
-"""
-    
-    def _generate_comparison_advice(self, question: str) -> str:
-        """Generate advice for comparison questions"""
-        return """
-🔄 **SO SÁNH CỔ PHIẾU:**
-
-**📊 Tiêu chí so sánh:**
-
-**1. Chỉ số tài chính:**
-- **P/E Ratio:** Thấp hơn = hấp dẫn hơn
-- **ROE:** Cao hơn = hiệu quả tốt hơn
-- **Debt/Equity:** Thấp hơn = an toàn hơn
-- **Revenue Growth:** Cao hơn = tiềm năng tốt hơn
-
-**2. Yếu tố định tính:**
-- **Vị thế thị trường:** Leader vs Follower
-- **Mô hình kinh doanh:** Ổn định vs Biến động
-- **Quản lý:** Kinh nghiệm và định hướng
-- **Cổ tức:** Tỷ lệ và độ ổn định
-
-**3. Triển vọng ngành:**
-- **Chu kỳ sống:** Mới nổi vs Trưởng thành vs Suy giảm
-- **Cạnh tranh:** Mức độ và rào cản gia nhập
-- **Quy định:** Tác động của chính sách
-
-**🎯 Phương pháp lựa chọn:**
-1. Lập bảng so sánh các chỉ số chính
-2. Đánh giá điểm mạnh/yếu của từng mã
-3. Xét đến mục tiêu đầu tư của bạn
-4. Chọn mã phù hợp với hồ sơ rủi ro
-
-💡 **Tip:** Đừng chỉ so sánh số liệu, hãy hiểu rõ câu chuyện kinh doanh!
-"""
-    
-    def _generate_beginner_advice(self) -> str:
-        """Generate advice for beginners"""
-        return """
-🌱 **CHIẾN LƯỢC ĐẦU TƯ CHO NGƯỜI MỚI:**
-
-**📚 BƯớc 1: Học kiến thức cơ bản**
-- Hiểu các chỉ số: P/E, P/B, ROE, EPS
-- Nắm vững phân tích cơ bản và kỹ thuật
-- Đọc sách, tham gia khóa học
-- Theo dõi tin tức tài chính hàng ngày
-
-**💰 Bước 2: Chuẩn bị tài chính**
-- Chỉ dùng tiền nhàn rỗi (không ảnh hưởng sinh hoạt)
-- Bắt đầu với 10-50 triệu VND
-- Mở tài khoản chứng khoán tại công ty uy tín
-- Có quỹ dự phòng 6 tháng chi phí
-
-**🎯 Bước 3: Chiến lược đầu tiên**
-- Bắt đầu với blue-chip: VCB, VIC, VNM, GAS
-- Đầu tư định kỳ (DCA) 2-5 triệu/tháng
-- Đa dạng hóa: 3-5 mã khác ngành
-- Đặt stop-loss 10-15%
-
-**🔍 Bước 4: Theo dõi và học hỏi**
-- Ghi chép mọi giao dịch và lý do
-- Đánh giá kết quả hàng tháng
-- Học từ sai lầm, điều chỉnh chiến lược
-- Tham gia cộng đồng đầu tư
-
-**⚠️ Sai lầm cần tránh:**
-- Đầu tư theo tin đồn, FOMO
-- Không đặt stop-loss
-- Vay tiền để đầu tư
-- Mong muốn làm giàu nhanh
-- Bỏ qua việc học hỏi
-
-💡 **Nhớ:** Đầu tư là cuộc marathon, không phải sprint!
-"""
-    
-    def _generate_risk_management_advice(self) -> str:
-        return """
-📈 **QUẢN LÝ RỦI RO TRONG ĐẦU TƯ CỔ PHIẾU:**
-
-**1. 🎯 Nguyên tắc cơ bản:**
-- **Quy tắc 1-5-10:** Không mất quá 1% tài khoản/lệnh, 5%/ngày, 10%/tháng
-- **Đa dạng hóa:** Tối thiểu 8-10 mã khác ngành
-- **Tỷ lệ vốn:** Cổ phiếu không quá 70% tổng tài sản
-
-**2. ⚖️ Công cụ quản lý rủi ro:**
-- **Stop-loss:** Cắt lỗ tự động khi giảm 8-12%
-- **Take-profit:** Chốt lời khi đạt mục tiêu 15-25%
-- **Position sizing:** Tính toán số lượng cổ phiếu phù hợp
-
-**3. 📊 Đánh giá rủi ro:**
-- **Beta:** Đo độ biến động so với thị trường
-- **Volatility:** Mức độ dao động giá
-- **Drawdown:** Mức giảm tối đa từ đỉnh
-
-**4. 🛡️ Chiến lược bảo vệ:**
-- **Hedge:** Sử dụng derivatives để bảo hiểm
-- **Rebalancing:** Cân bằng lại danh mục định kỳ
-- **Cash reserve:** Giữ 20-30% tiền mặt
-
-**5. 🧠 Tâm lý đầu tư:**
-- Không đầu tư khi cảm xúc (sợ hãi/tham lam)
-- Tuân thủ kế hoạch đã đề ra
-- Học hỏi từ sai lầm
-
-💡 **Công thức tính position size:**
-Số cổ phiếu = (Vốn × % rủi ro) ÷ (Giá mua - Stop loss)
-
-⚠️ **Nhớ:** Rủi ro và lợi nhuận luôn đi đôi. Quản lý tốt rủi ro = bảo vệ vốn dài hạn.
-"""
-    
-    def _generate_investment_strategy_advice(self) -> str:
-        return """
-📈 **CHIẾN LƯỢC ĐẦU TƯ CỔ PHIẾU:**
-
-**1. 🎯 Xác định mục tiêu:**
-- **Ngắn hạn (< 1 năm):** Swing trading, lợi nhuận 15-30%
-- **Trung hạn (1-3 năm):** Growth investing, lợi nhuận 50-100%
-- **Dài hạn (> 3 năm):** Value investing, lợi nhuận 100-300%
-
-**2. 📊 Phương pháp phân tích:**
-- **Phân tích cơ bản:** P/E, P/B, ROE, tăng trưởng doanh thu
-- **Phân tích kỹ thuật:** MA, RSI, MACD, support/resistance
-- **Phân tích vĩ mô:** GDP, lạm phát, lãi suất, tỷ giá
-
-**3. 🏗️ Xây dựng danh mục:**
-- **Core (60%):** Cổ phiếu blue-chip ổn định
-- **Growth (25%):** Cổ phiếu tăng trưởng cao
-- **Speculative (15%):** Cổ phiếu tiềm năng, rủi ro cao
-
-**4. ⏰ Thời điểm vào lệnh:**
-- **DCA (Dollar Cost Averaging):** Mua định kỳ
-- **Value averaging:** Mua nhiều khi giá thấp
-- **Momentum:** Mua khi xu hướng tăng rõ ràng
-
-**5. 🔄 Quản lý danh mục:**
-- **Rebalancing:** 3-6 tháng/lần
-- **Review:** Đánh giá hiệu suất hàng quý
-- **Adjustment:** Điều chỉnh theo thị trường
-
-**6. 🎪 Chiến lược theo thị trường:**
-- **Bull market:** Tăng tỷ trọng cổ phiếu
-- **Bear market:** Giảm tỷ trọng, tăng tiền mặt
-- **Sideways:** Focus vào cổ tức, trading ngắn hạn
-
-💡 **Tip:** Bắt đầu với số tiền nhỏ, học kinh nghiệm trước khi tăng vốn.
-"""
-    
-    def _generate_analysis_advice(self) -> str:
-        return """
-📈 **PHƯƠNG PHÁP PHÂN TÍCH CỔ PHIẾU:**
-
-**1. 📊 Phân tích cơ bản (Fundamental Analysis):**
-- **Báo cáo tài chính:** Doanh thu, lợi nhuận, nợ, dòng tiền
-- **Chỉ số định giá:** P/E, P/B, P/S, EV/EBITDA
-- **Chỉ số hiệu quả:** ROE, ROA, ROIC, profit margin
-- **Tăng trưởng:** Revenue growth, EPS growth
-
-**2. 📈 Phân tích kỹ thuật (Technical Analysis):**
-- **Xu hướng:** Uptrend, downtrend, sideways
-- **Support/Resistance:** Vùng hỗ trợ/kháng cự
-- **Chỉ báo:** RSI, MACD, Bollinger Bands, MA
-- **Patterns:** Head & shoulders, triangle, flag
-
-**3. 🌍 Phân tích vĩ mô:**
-- **Kinh tế:** GDP, lạm phát, thất nghiệp
-- **Chính sách:** Lãi suất, chính sách tài khóa
-- **Ngành:** Chu kỳ ngành, cạnh tranh
-- **Quốc tế:** Thương mại, địa chính trị
-
-**4. 🔍 Quy trình phân tích:**
-- **Bước 1:** Phân tích vĩ mô → chọn ngành
-- **Bước 2:** So sánh các công ty trong ngành
-- **Bước 3:** Phân tích cơ bản công ty
-- **Bước 4:** Phân tích kỹ thuật timing
-- **Bước 5:** Đánh giá rủi ro/lợi nhuận
-
-**5. 🎯 Chỉ số quan trọng:**
-- **P/E < 15:** Có thể undervalued
-- **ROE > 15%:** Hiệu quả sử dụng vốn tốt
-- **Debt/Equity < 0.5:** Cấu trúc tài chính lành mạnh
-- **Revenue growth > 10%:** Tăng trưởng tốt
-
-💡 **Lưu ý:** Kết hợp cả 3 phương pháp để có quyết định đầu tư tối ưu.
-"""
-    
-    def _generate_portfolio_advice(self) -> str:
-        return """
-📈 **XÂY DỰNG DANH MỤC ĐẦU TƯ:**
-
-**1. 🎯 Nguyên tắc đa dạng hóa:**
-- **Theo ngành:** Tối thiểu 5-8 ngành khác nhau
-- **Theo vốn hóa:** Large-cap (60%), Mid-cap (25%), Small-cap (15%)
-- **Theo địa lý:** Trong nước (70%), quốc tế (30%)
-- **Theo tài sản:** Cổ phiếu, trái phiếu, vàng, bất động sản
-
-**2. 📊 Cấu trúc danh mục mẫu:**
-- **Bảo thủ (Risk < 30%):** 40% cổ phiếu, 50% trái phiếu, 10% tiền mặt
-- **Cân bằng (Risk 30-70%):** 60% cổ phiếu, 30% trái phiếu, 10% khác
-- **Tích cực (Risk > 70%):** 80% cổ phiếu, 15% trái phiếu, 5% khác
-
-**3. 🏗️ Xây dựng từng tầng:**
-- **Tầng 1 - Core (50%):** Blue-chip, cổ tức ổn định
-- **Tầng 2 - Satellite (30%):** Growth stocks, mid-cap
-- **Tầng 3 - Speculative (20%):** Small-cap, emerging sectors
-
-**4. ⚖️ Cân bằng danh mục:**
-- **Rebalancing:** 3-6 tháng/lần
-- **Threshold:** Khi tỷ trọng lệch > 5%
-- **Calendar:** Cuối quý/năm
-- **Tactical:** Theo điều kiện thị trường
-
-**5. 📈 Theo dõi hiệu suất:**
-- **Benchmark:** So với VN-Index, VN30
-- **Risk-adjusted return:** Sharpe ratio, Sortino ratio
-- **Drawdown:** Mức giảm tối đa
-- **Volatility:** Độ biến động
-
-**6. 🔄 Điều chỉnh theo chu kỳ:**
-- **Bull market:** Tăng tỷ trọng cổ phiếu growth
-- **Bear market:** Tăng defensive stocks, tiền mặt
-- **Recovery:** Focus vào cyclical stocks
-
-💡 **Quy tắc vàng:** Không bao giờ đặt tất cả trứng vào một giỏ!
+⚠️ **LƯU Ý:** Để nhận được phân tích chi tiết và cá nhân hóa, 
+vui lòng thử lại sau khi API quota được reset (thường là 24h).
 """
     
     def _generate_default_fallback(self, question: str) -> str:
@@ -497,7 +333,7 @@ Xin lỗi, Gemini API đã hết quota nên tôi không thể phân tích chi ti
 ⏰ **Quota thường reset sau 24 giờ**
 """
     
-    def generate_enhanced_advice(self, context: dict, force_model: str = None):
+    def generate_enhanced_advice(self, context: dict):
         """Generate enhanced advice with comprehensive system data"""
         query = context.get('query', '')
         symbol = context.get('symbol', '')
@@ -536,14 +372,11 @@ CẢNH BÁO RỦI RO:
 """
         
         try:
-            result = self.generate_with_fallback(enhanced_context, 'financial_advice', max_tokens=3000, force_model=force_model)
+            result = self.generate_with_fallback(enhanced_context, 'financial_advice', max_tokens=3000)
             
             if result['success']:
                 parsed_response = self._parse_response(result['response'])
-                model_display = f"{result['model_used'].upper()}"
-                if force_model and force_model == result['model_used']:
-                    model_display += " (Cố định)"
-                parsed_response['expert_advice'] += f"\n\n🤖 **AI Model:** {model_display}"
+                parsed_response['expert_advice'] += f"\n\n🤖 **AI Model:** {result['model_used']}"
                 return parsed_response
             else:
                 return self._generate_enhanced_offline_response(query, symbol, system_data, query_type)
@@ -811,7 +644,7 @@ Dữ liệu có sẵn: {data_summary}
     
 
     
-    def generate_general_response(self, query: str, force_model: str = None) -> dict:
+    def generate_general_response(self, query: str) -> dict:
         """Generate response for general questions using best available AI model"""
         try:
             # Enhanced context for general financial questions
@@ -838,13 +671,9 @@ HÃY TRẢ LỜI:
 
 Trả lời bằng tiếng Việt, chuyên nghiệp, chi tiết, thực tiễn, dễ hiểu, có thể áp dụng ngay.
 """
-            result = self.generate_with_fallback(context, 'general_query', max_tokens=3000, force_model=force_model)
+            result = self.generate_with_fallback(context, 'general_query', max_tokens=3000)
             
             if result['success']:
-                model_display = f"{result['model_used'].upper()}"
-                if force_model and force_model == result['model_used']:
-                    model_display += " (Cố định)"
-                
                 if result.get('quota_exceeded'):
                     # Quota exceeded, return offline response
                     return {
@@ -859,7 +688,7 @@ Trả lời bằng tiếng Việt, chuyên nghiệp, chi tiết, thực tiễn, 
                 else:
                     # Normal AI response
                     return {
-                        "expert_advice": f"📈 **PHÂN TÍCH CHUYÊN GIA:**\n{result['response']}\n\n🤖 **AI Model:** {model_display}\n\n⚠️ **LƯU Ý:** Đây là thông tin tham khảo, không phải lời khuyên đầu tư tuyệt đối.",
+                        "expert_advice": f"📈 **PHÂN TÍCH CHUYÊN GIA:**\n{result['response']}\n\n🤖 **AI Model:** {result['model_used']}\n\n⚠️ **LƯU Ý:** Đây là thông tin tham khảo, không phải lời khuyên đầu tư tuyệt đối.",
                         "recommendations": [
                             "Nghiên cứu thêm từ nhiều nguồn",
                             "Tham khảo chuyên gia tài chính", 
@@ -875,17 +704,13 @@ Trả lời bằng tiếng Việt, chuyên nghiệp, chi tiết, thực tiễn, 
             return self._get_fallback_response(query)
     
     def _get_fallback_response(self, query: str) -> dict:
-        """Enhanced fallback response with useful content"""
-        # Use the same logic as offline fallback to provide useful content
-        fallback_result = self._generate_offline_fallback(query, 'general_query')
-        
+        """Fallback response when Gemini fails"""
         return {
-            "expert_advice": f"📈 **PHÂN TÍCH CHUYÊN GIA (Offline Mode):**\n\n{fallback_result['response']}\n\n🤖 **AI Model:** Offline Mode\n\n⚠️ **LƯU Ý:** Đây là phân tích offline do API không khả dụng.",
+            "expert_advice": f"📈 **VỀ CÂU HỎI: {query}**\n\nXin lỗi, tôi không thể xử lý câu hỏi này lúc này. Vui lòng thử lại sau hoặc đặt câu hỏi khác.\n\n⚠️ **GỢI Ý:**\n- Kiểm tra kết nối internet\n- Thử đặt câu hỏi ngắn gọn hơn\n- Liên hệ hỗ trợ nếu vấn đề tiếp tục",
             "recommendations": [
-                "Đợi API reset để có phân tích chi tiết hơn",
-                "Tham khảo các nguồn tin tức tài chính",
-                "Liên hệ chuyên gia tài chính nếu cần",
-                "Áp dụng nguyên tắc quản lý rủi ro cơ bản"
+                "Thử đặt câu hỏi khác",
+                "Kiểm tra kết nối mạng",
+                "Liên hệ hỗ trợ kỹ thuật"
             ]
         }
     
@@ -933,64 +758,67 @@ Trả lời bằng tiếng Việt, chuyên nghiệp, chi tiết, thực tiễn, 
         return status
     
     def update_api_key(self, provider: str, api_key: str) -> Dict[str, Any]:
-        """Update API keys"""
+        """Dynamically update Gemini API key"""
         try:
             if provider.lower() == 'gemini':
-                self.llm.update_keys(gemini_key=api_key)
-            elif provider.lower() == 'openai':
-                self.llm.update_keys(openai_key=api_key)
+                genai.configure(api_key=api_key)
+                
+                # Unified model priority - Gemini 2.0 Flash as standard
+                model_names = [
+                    'gemini-2.0-flash-exp',        # Primary: Latest experimental (best performance)
+                    'gemini-2.0-flash',            # Fallback: Stable 2.0
+                    'gemini-1.5-flash',            # Legacy: Stable 1.5
+                    'gemini-1.5-pro'               # Last resort: Pro version
+                ]
+                
+                for model_name in model_names:
+                    try:
+                        model = genai.GenerativeModel(model_name)
+                        # Test the model with a simple request
+                        test_response = model.generate_content("Test")
+                        self.available_models['gemini'] = model
+                        self.gemini_api_key = api_key
+                        logger.info(f"✅ Gemini API key updated with model: {model_name}")
+                        return {'success': True, 'message': f'Gemini API key updated with model: {model_name}'}
+                    except Exception as e:
+                        logger.warning(f"⚠️ Model {model_name} not available: {e}")
+                        continue
+                else:
+                    # If no model works, return error
+                    return {'success': False, 'message': 'No available Gemini models found'}
             else:
-                return {'success': False, 'message': f'Unsupported provider: {provider}'}
-            
-            self.offline_mode = len(self.llm.available_models) == 0
-            return {'success': True, 'message': f'{provider} API key updated'}
-            
+                return {'success': False, 'message': f'Only Gemini provider is supported. Got: {provider}'}
+                
         except Exception as e:
-            return {'success': False, 'message': str(e)}
-    
-    def set_gemini_api_key(self, gemini_key: str = None, openai_key: str = None, preferred: str = "auto"):
-        """Backward compatibility method"""
-        self.llm.update_keys(gemini_key=gemini_key, openai_key=openai_key)
-        self.preferred_model = preferred
-        self.offline_mode = len(self.llm.available_models) == 0
-        return len(self.llm.available_models) > 0
+            logger.error(f"❌ Failed to update {provider} API key: {str(e)}")
+            return {'success': False, 'message': f'Failed to update {provider} API key: {str(e)}'}
     
     def get_model_recommendations(self, task_type: str) -> Dict[str, Any]:
         """Get model recommendations for specific task types"""
-        try:
-            primary_model = self.select_best_model(task_type)
-        except ValueError:
-            primary_model = None
-            
         recommendations = {
             'task_type': task_type,
-            'primary_model': primary_model,
-            'preferred_model': self.preferred_model,
+            'primary_model': self.select_best_model(task_type),
             'available_alternatives': [],
             'reasoning': ''
         }
         
         # Get all available models except primary
-        if primary_model:
-            alternatives = [model for model in self.available_models.keys() if model != primary_model]
-            recommendations['available_alternatives'] = alternatives
+        primary = recommendations['primary_model']
+        alternatives = [model for model in self.available_models.keys() if model != primary]
+        recommendations['available_alternatives'] = alternatives
         
-        # Add reasoning based on preference and task type
-        if self.preferred_model == "gemini":
-            recommendations['reasoning'] = 'User prefers Gemini AI for Vietnamese content and free usage'
-        elif self.preferred_model == "openai":
-            recommendations['reasoning'] = 'User prefers OpenAI GPT for high-quality analysis'
-        else:
-            task_reasoning = {
-                'financial_advice': 'Auto-selecting best model for Vietnamese financial analysis',
-                'price_prediction': 'Auto-selecting best model for technical analysis and predictions',
-                'risk_assessment': 'Auto-selecting best model for risk calculation and assessment',
-                'news_analysis': 'Auto-selecting best model for sentiment analysis',
-                'market_analysis': 'Auto-selecting best model for market reasoning',
-                'investment_analysis': 'Auto-selecting best model for investment metrics',
-                'general_query': 'Auto-selecting best model for general queries'
-            }
-            recommendations['reasoning'] = task_reasoning.get(task_type, 'Auto model selection based on availability')
+        # Add reasoning based on task type
+        task_reasoning = {
+            'financial_advice': 'Gemini excels at Vietnamese financial analysis and reasoning',
+            'price_prediction': 'Gemini provides comprehensive technical analysis and prediction models',
+            'risk_assessment': 'Gemini offers superior risk calculation and assessment',
+            'news_analysis': 'Gemini has excellent sentiment analysis capabilities',
+            'market_analysis': 'Gemini provides excellent market reasoning and context understanding',
+            'investment_analysis': 'Gemini excels at investment metrics and calculations',
+            'general_query': 'Gemini handles Vietnamese queries and general reasoning perfectly'
+        }
+        
+        recommendations['reasoning'] = task_reasoning.get(task_type, 'Default model selection based on availability')
         
         return recommendations
     
@@ -1051,10 +879,10 @@ Trả lời bằng tiếng Việt, chuyên nghiệp, chi tiết, thực tiễn, 
     def get_model_info(self) -> Dict[str, Any]:
         """Get information about available models"""
         return {
-            'available_models': list(self.llm.available_models.keys()),
-            'model_count': len(self.llm.available_models),
-            'is_active': len(self.llm.available_models) > 0,
-            'preferred_model': self.preferred_model
+            'available_models': list(self.available_models.keys()),
+            'current_model': self.current_model_name,
+            'model_count': len(self.available_models),
+            'is_active': len(self.available_models) > 0
         }
 
 # Backward compatibility alias

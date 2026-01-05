@@ -1,81 +1,23 @@
 version: '3.8'
 
 services:
-  # Main Application Service
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: vnstock-app
+  duong-ai-trading:
+    build: .
     ports:
       - "8501:8501"
     environment:
-      - PYTHONPATH=/app
-      - PYTHONUNBUFFERED=1
-      - STREAMLIT_SERVER_PORT=8501
-      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
-      - STREAMLIT_SERVER_HEADLESS=true
-      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
-      - OLLAMA_HOST=host.docker.internal:11434
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-your_gemini_api_key_here}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_api_key_here}
+      - LLAMA_API_KEY=${LLAMA_API_KEY:-your_llama_api_key_here}
+      - LLAMA_BASE_URL=${LLAMA_BASE_URL:-https://api.together.xyz/v1}
+      - SERPER_API_KEY=${SERPER_API_KEY:-your_serper_api_key_here}
     volumes:
-      - ./logs:/app/logs
-      - ./duong_trading.db:/app/duong_trading.db
-      - ./cache:/app/cache
-      - app_data:/app/data
-    command: >
-      sh -c "python -c 'import streamlit as st; print(f\"Streamlit version: {st.__version__}\")' &&
-             streamlit run app.py 
-             --server.port=8501 
-             --server.address=0.0.0.0 
-             --server.headless=true 
-             --browser.gatherUsageStats=false"
+      - ./.env:/app/.env:ro
     restart: unless-stopped
+    container_name: duong-ai-trading-pro
     networks:
-      - vnstock-network
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-          cpus: '2.0'
-        reservations:
-          memory: 2G
-          cpus: '1.0'
-
-  # Redis Cache Service
-  redis:
-    image: redis:7-alpine
-    container_name: vnstock-redis
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data
-    networks:
-      - vnstock-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - ai-trading-network
 
 networks:
-  vnstock-network:
+  ai-trading-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.18.0.0/16
-
-volumes:
-  app_data:
-    driver: local
-  redis_data:
-    driver: local

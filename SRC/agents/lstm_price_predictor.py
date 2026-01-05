@@ -2,6 +2,10 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
 import warnings
+import asyncio
+import types
+import yfinance as yf
+
 warnings.filterwarnings('ignore')
 
 try:
@@ -19,12 +23,10 @@ class LSTMPricePredictor:
         self.name = "LSTM Price Predictor Agent"
         self.vn_api = vn_api
         self.ai_agent = None
-        if KERAS_AVAILABLE:
-            self.scaler = MinMaxScaler(feature_range=(0, 1))
-        else:
-            self.scaler = None
+        self.scaler = MinMaxScaler(feature_range=(0, 1))
         self.model = None
-        self.look_back = 365  # Use 365 days for better performance (modern approach)
+        self.look_back = 60  # Use 60 days for better balance between data efficiency and learning capacity
+        self.min_data_required = self.look_back + 40  # Minimum: look_back + 40 for train/test split
         self.model_cache = {}  # Cache trained models
         self.model_cache_time = {}  # Track model training time
         
@@ -32,8 +34,10 @@ class LSTMPricePredictor:
         """Set AI agent for enhanced predictions"""
         self.ai_agent = ai_agent
     
-    def create_dataset(self, dataset, look_back=365):
+    def create_dataset(self, dataset, look_back=None):
         """Convert time series to supervised learning format"""
+        if look_back is None:
+            look_back = self.look_back
         dataX, dataY = [], []
         for i in range(len(dataset) - look_back - 1):
             a = dataset[i:(i + look_back), 0]
@@ -50,22 +54,26 @@ class LSTMPricePredictor:
             else:
                 dataset = np.array(price_data).reshape(-1, 1)
             
-            # Normalize data
-            dataset = self.scaler.fit_transform(dataset.astype('float32'))
-            
-            # Split into train/test (80/20 - modern approach)
+            # Split into train/test (80/20) BEFORE scaling to prevent data leakage
             train_size = int(len(dataset) * 0.8)
-            train, test = dataset[0:train_size, :], dataset[train_size:len(dataset), :]
+            train_raw, test_raw = dataset[0:train_size, :], dataset[train_size:len(dataset), :]
+            
+            # Fit scaler on train data ONLY, then transform both train and test
+            train_scaled = self.scaler.fit_transform(train_raw.astype('float32'))
+            test_scaled = self.scaler.transform(test_raw.astype('float32'))
             
             # Create datasets
-            trainX, trainY = self.create_dataset(train, self.look_back)
-            testX, testY = self.create_dataset(test, self.look_back)
+            trainX, trainY = self.create_dataset(train_scaled, self.look_back)
+            testX, testY = self.create_dataset(test_scaled, self.look_back)
             
             # Reshape for LSTM [samples, time steps, features]
             trainX = np.reshape(trainX, (trainX.shape[0], trainX.shape[1], 1))
             testX = np.reshape(testX, (testX.shape[0], testX.shape[1], 1))
             
-            return trainX, trainY, testX, testY, dataset
+            # Return full scaled dataset (train + test) for predictions
+            dataset_scaled = np.vstack([train_scaled, test_scaled])
+            
+            return trainX, trainY, testX, testY, dataset_scaled
             
         except Exception as e:
             print(f"❌ Data preparation failed: {e}")
@@ -140,8 +148,8 @@ class LSTMPricePredictor:
             print(f"❌ Model training failed: {e}")
             return None
     
-    def predict_with_lstm(self, symbol: str, days_ahead: int = 30):
-        """Main LSTM prediction function"""
+    def predict_with_lstm(self, symbol: str, days_ahead: int = 90):
+        """Main LSTM prediction function - default to 90 days for comprehensive forecasts"""
         try:
             # Get historical data
             price_data = self._get_price_data(symbol)
@@ -178,7 +186,13 @@ class LSTMPricePredictor:
             # Calculate confidence based on model performance
             confidence = self._calculate_lstm_confidence(train_score, test_score, price_data)
             
-            current_price = float(price_data.iloc[-1])
+            # CRITICAL FIX: Get REAL current price from same source as app.py
+            try:
+                real_current_price = self._get_real_current_price_for_lstm(symbol)
+                current_price = real_current_price if real_current_price > 0 else float(price_data.iloc[-1])
+            except AttributeError:
+                # Fallback if method doesn't exist
+                current_price = float(price_data.iloc[-1])
             
             # Determine trend based on LSTM predictions
             trend_direction = self._determine_lstm_trend(current_price, future_predictions)
@@ -210,36 +224,44 @@ class LSTMPricePredictor:
             
             # Try VNStock first for Vietnamese stocks
             if self.vn_api and self.vn_api.is_vn_stock(symbol):
-                from vnstock import Vnstock
-                stock_obj = Vnstock().stock(symbol=symbol, source='VCI')
-                end_date = datetime.now().strftime('%Y-%m-%d')
-                # Get more historical data for better training (3 years)
-                start_date = (datetime.now() - timedelta(days=1095)).strftime('%Y-%m-%d')
-                hist_data = stock_obj.quote.history(start=start_date, end=end_date, interval='1D')
-                
-                if not hist_data.empty:
-                    price_data = hist_data['close']
+                try:
+                    from vnstock import Vnstock
+                    stock_obj = Vnstock().stock(symbol=symbol, source='VCI')
+                    end_date = datetime.now().strftime('%Y-%m-%d')
+                    # Get more historical data for better training (3 years)
+                    start_date = (datetime.now() - timedelta(days=1095)).strftime('%Y-%m-%d')
+                    hist_data = stock_obj.quote.history(start=start_date, end=end_date, interval='1D')
+                    
+                    if not hist_data.empty:
+                        price_data = hist_data['close']
+                        print(f"✅ Retrieved VNStock data for {symbol}")
+                except Exception as e:
+                    print(f"⚠️ VNStock retrieval failed for {symbol}: {e}")
             
             # Fallback to Yahoo Finance
             if price_data is None:
-                import yfinance as yf
-                ticker = yf.Ticker(symbol)
-                hist = ticker.history(period="3y")  # Get 3 years of data
-                
-                if not hist.empty:
-                    price_data = hist['Close']
+                try:
+                    ticker = yf.Ticker(symbol)
+                    hist = ticker.history(period="3y")  # Get 3 years of data
+                    
+                    if not hist.empty:
+                        price_data = hist['Close']
+                        print(f"✅ Retrieved Yahoo Finance data for {symbol}")
+                except Exception as e:
+                    print(f"⚠️ Yahoo Finance retrieval failed for {symbol}: {e}")
             
             # Data validation and cleaning
             if price_data is not None:
                 # Remove NaN values
                 price_data = price_data.dropna()
                 
-                # Check for sufficient data points
-                if len(price_data) < 200:
-                    print(f"⚠️ Insufficient data for {symbol}: {len(price_data)} points")
+                # Check for sufficient data points (use min_data_required from __init__)
+                min_required = max(self.min_data_required, 100)  # At least 100 points
+                if len(price_data) < min_required:
+                    print(f"⚠️ Insufficient data for {symbol}: {len(price_data)} points (minimum: {min_required})")
                     return None
                 
-                # Check for data quality (no extreme outliers)
+                # Check for data quality (no extreme outliers using IQR method)
                 q1 = price_data.quantile(0.25)
                 q3 = price_data.quantile(0.75)
                 iqr = q3 - q1
@@ -247,11 +269,17 @@ class LSTMPricePredictor:
                 upper_bound = q3 + 1.5 * iqr
                 
                 # Remove extreme outliers
+                original_len = len(price_data)
                 price_data = price_data[(price_data >= lower_bound) & (price_data <= upper_bound)]
                 
-                print(f"✅ Retrieved {len(price_data)} valid data points for {symbol}")
+                if len(price_data) < min_required:
+                    print(f"⚠️ Insufficient data after outlier removal for {symbol}: {len(price_data)} points (original: {original_len})")
+                    return None
+                
+                print(f"✅ Retrieved {len(price_data)} valid data points for {symbol} (removed {original_len - len(price_data)} outliers)")
                 return price_data
             
+            print(f"❌ No data source available for {symbol}")
             return None
             
         except Exception as e:
@@ -259,10 +287,19 @@ class LSTMPricePredictor:
             return None
     
     def _predict_future_prices(self, model, dataset, days_ahead):
-        """Enhanced future price prediction with rolling window approach"""
+        """Enhanced future price prediction with rolling window approach and validation"""
         try:
+            # Get current price for validation
+            current_price = float(self.scaler.inverse_transform(dataset[-1:].reshape(-1, 1))[0, 0])
+            
             # Get last sequence for prediction (use look_back period)
             last_sequence = dataset[-self.look_back:].copy()
+            
+            # Guard: ensure we have enough history
+            if last_sequence.shape[0] < self.look_back:
+                print(f"⚠️ Insufficient history for predictions: {last_sequence.shape[0]} < {self.look_back}")
+                return {}
+            
             predictions = []
             
             # Enhanced prediction with rolling window
@@ -273,64 +310,82 @@ class LSTMPricePredictor:
                 pred = model.predict(x_future, verbose=0)
                 predictions.append(pred[0, 0])
                 
-                # Update x_future by removing first value and adding prediction
-                x_future = np.append(x_future[:, 1:, :], [[pred[0]]], axis=1)
+                # Update x_future using concatenate and expand_dims for shape safety
+                # Remove first timestep and append new prediction
+                x_future = np.concatenate([x_future[:, 1:, :], np.expand_dims(np.expand_dims(pred[0, :], axis=0), axis=0)], axis=1)
             
             # Inverse transform predictions
             predictions = np.array(predictions).reshape(-1, 1)
             predictions = self.scaler.inverse_transform(predictions)
             
+            # CRITICAL FIX: Validate predictions against current price
+            for i, pred_price in enumerate(predictions):
+                pred_value = float(pred_price[0])
+                # If prediction is more than 3x or less than 0.3x current price, it's likely wrong
+                if pred_value > current_price * 3 or pred_value < current_price * 0.3:
+                    print(f"⚠️ LSTM prediction validation failed: Day {i+1} predicted {pred_value:.2f} vs current {current_price:.2f}")
+                    # Apply reasonable bounds
+                    if pred_value > current_price * 3:
+                        predictions[i] = current_price * (1 + 0.1 * (i + 1) / days_ahead)  # Max 10% growth
+                    else:
+                        predictions[i] = current_price * (1 - 0.1 * (i + 1) / days_ahead)  # Max 10% decline
+            
             # Format predictions by timeframe with confidence intervals
             formatted_predictions = {}
             
             # Short term (1, 3, 7 days) - higher confidence
-            formatted_predictions['short_term'] = {
-                '1_days': {
-                    'price': round(float(predictions[0]), 2), 
-                    'days': 1,
-                    'confidence_interval': self._calculate_confidence_interval(predictions[0], 0.05)
-                },
-                '3_days': {
-                    'price': round(float(predictions[2]), 2), 
-                    'days': 3,
-                    'confidence_interval': self._calculate_confidence_interval(predictions[2], 0.08)
-                },
-                '7_days': {
-                    'price': round(float(predictions[6]), 2), 
-                    'days': 7,
-                    'confidence_interval': self._calculate_confidence_interval(predictions[6], 0.12)
+            if days_ahead >= 1:
+                formatted_predictions['short_term'] = {
+                    '1_days': {
+                        'price': round(float(predictions[0]), 2), 
+                        'days': 1,
+                        'confidence_interval': self._calculate_confidence_interval(predictions[0], 0.05)
+                    }
                 }
-            }
+                if days_ahead >= 3:
+                    formatted_predictions['short_term']['3_days'] = {
+                        'price': round(float(predictions[2]), 2), 
+                        'days': 3,
+                        'confidence_interval': self._calculate_confidence_interval(predictions[2], 0.08)
+                    }
+                if days_ahead >= 7:
+                    formatted_predictions['short_term']['7_days'] = {
+                        'price': round(float(predictions[6]), 2), 
+                        'days': 7,
+                        'confidence_interval': self._calculate_confidence_interval(predictions[6], 0.12)
+                    }
             
             # Medium term (14, 30 days)
-            if days_ahead >= 30:
+            if days_ahead >= 14:
                 formatted_predictions['medium_term'] = {
                     '14_days': {
                         'price': round(float(predictions[13]), 2), 
                         'days': 14,
                         'confidence_interval': self._calculate_confidence_interval(predictions[13], 0.18)
-                    },
-                    '30_days': {
+                    }
+                }
+                if days_ahead >= 30:
+                    formatted_predictions['medium_term']['30_days'] = {
                         'price': round(float(predictions[29]), 2), 
                         'days': 30,
                         'confidence_interval': self._calculate_confidence_interval(predictions[29], 0.25)
                     }
-                }
             
             # Long term (60, 90 days) - lower confidence
-            if days_ahead >= 90:
+            if days_ahead >= 60:
                 formatted_predictions['long_term'] = {
                     '60_days': {
                         'price': round(float(predictions[59]), 2), 
                         'days': 60,
                         'confidence_interval': self._calculate_confidence_interval(predictions[59], 0.35)
-                    },
-                    '90_days': {
+                    }
+                }
+                if days_ahead >= 90:
+                    formatted_predictions['long_term']['90_days'] = {
                         'price': round(float(predictions[89]), 2), 
                         'days': 90,
                         'confidence_interval': self._calculate_confidence_interval(predictions[89], 0.45)
                     }
-                }
             
             return formatted_predictions
             
@@ -412,7 +467,13 @@ class LSTMPricePredictor:
             if price_data is None:
                 return {'error': f'No data available for {symbol}'}
             
-            current_price = float(price_data.iloc[-1])
+            # CRITICAL FIX: Get REAL current price for fallback too
+            try:
+                real_current_price = self._get_real_current_price_for_lstm(symbol)
+                current_price = real_current_price if real_current_price > 0 else float(price_data.iloc[-1])
+            except AttributeError:
+                # Fallback if method doesn't exist
+                current_price = float(price_data.iloc[-1])
             
             # Simple trend-based prediction
             recent_prices = price_data.tail(30)
@@ -480,8 +541,29 @@ class LSTMPricePredictor:
         except Exception as e:
             return 'neutral'
     
-    def predict_with_ai_enhancement(self, symbol: str, days_ahead: int = 30):
-        """LSTM prediction with AI enhancement"""
+    def _get_real_current_price_for_lstm(self, symbol: str) -> float:
+        """Get real current price from same source as app.py"""
+        try:
+            # Use same method as app.py - get from VNStock API
+            if self.vn_api:
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                stock_data = loop.run_until_complete(self.vn_api.get_stock_data(symbol))
+                loop.close()
+                
+                if stock_data and hasattr(stock_data, 'price'):
+                    return float(stock_data.price)
+            
+            # Fallback to 0 if no data
+            return 0.0
+            
+        except Exception as e:
+            print(f"⚠️ Failed to get real current price: {e}")
+            return 0.0
+    
+    def predict_with_ai_enhancement(self, symbol: str, days_ahead: int = 90):
+        """LSTM prediction with AI enhancement - default 90 days for comprehensive analysis"""
         # Get base LSTM prediction
         lstm_result = self.predict_with_lstm(symbol, days_ahead)
         
@@ -621,8 +703,8 @@ def enhance_price_predictor_with_lstm(price_predictor_instance):
     price_predictor_instance.lstm_predictor = LSTMPricePredictor(price_predictor_instance.vn_api)
     
     # Add LSTM prediction method
-    def predict_with_lstm_enhanced(self, symbol: str, days_ahead: int = 30):
-        """Enhanced prediction using both traditional methods and LSTM"""
+    def predict_with_lstm_enhanced(self, symbol: str, days_ahead: int = 90):
+        """Enhanced prediction using both traditional methods and LSTM (default 90 days for all timeframes)"""
         try:
             # Get traditional prediction
             traditional_result = self.predict_comprehensive(symbol)
