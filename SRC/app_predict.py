@@ -16,7 +16,7 @@ load_dotenv()
 
 # Cấu hình trang chuyên nghiệp
 st.set_page_config(
-    page_title="DUONG AI TRADING PRO",
+    page_title="Design and Evaluation of Multi-Agent Architectures for Stock Price Prediction: A Vietnam Case Study",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -1798,7 +1798,7 @@ if not is_english:
         <div class="container-fluid">
             <div class="row align-items-center">
                 <div class="col-12 text-center">
-                    <h1 class="header-title mb-2">📈 DUONG AI TRADING PRO</h1>
+                    <h1 class="header-title mb-2">📈 Design and Evaluation of Multi-Agent Architectures for Stock Price Prediction: A Vietnam Case Study</h1>
                     <p class="header-subtitle mb-3">Hệ thống AI phân tích chứng khoán thông minh</p>
                     <div class="d-flex flex-wrap justify-content-center gap-2">
                         <span class="badge bg-light bg-opacity-25 text-white px-3 py-2">
@@ -1828,7 +1828,7 @@ else:
         <div class="container-fluid">
             <div class="row align-items-center">
                 <div class="col-12 text-center">
-                    <h1 class="header-title mb-2">📈 DUONG AI TRADING PRO</h1>
+                    <h1 class="header-title mb-2">📈 Design and Evaluation of Multi-Agent Architectures for Stock Price Prediction: A Vietnam Case Study</h1>
                     <p class="header-subtitle mb-3">Intelligent AI Stock Analysis System</p>
                     <div class="d-flex flex-wrap justify-content-center gap-2">
                         <span class="badge bg-light bg-opacity-25 text-white px-3 py-2">
@@ -2242,6 +2242,16 @@ with st.sidebar:
     selected_stock = st.selectbox("Chọn cổ phiếu" if not is_english else "Select Stock", stock_options)
     symbol = selected_stock.split(" - ")[0] if selected_stock else ""
 
+# Market Overview Dashboard - Always Display
+from market_dashboard import display_market_overview
+
+# Dark mode toggle
+dark_mode = st.sidebar.checkbox("🌙 Dark Mode", value=False, key="dark_mode_toggle")
+
+display_market_overview(st.session_state.vn_api, st.session_state.get('is_english', False), dark_mode=dark_mode)
+
+st.markdown("---")
+
 # Main Content - Price Prediction Only
 is_english = st.session_state.get('is_english', False)
 if not is_english:
@@ -2318,7 +2328,7 @@ is_english = st.session_state.get('is_english', False)
 if not is_english:
     st.markdown("""
     <div style="text-align: center; padding: 1.5rem; background: #f8f9fa; border-radius: 10px; margin-top: 2rem;">
-        <h4 style="color: #2a5298; margin-bottom: 0.5rem;">🇻🇳 DUONG AI TRADING PRO</h4>
+        <h4 style="color: #2a5298; margin-bottom: 0.5rem;">Design and Evaluation of Multi-Agent Architectures for Stock Price Prediction: A Vietnam Case Study</h4>
         <p style="color: #666; font-size: 0.9rem; margin-bottom: 0.5rem;">6 AI Agents • Gemini 2.0 • CrewAI • Real-time Data</p>
         <p style="color: #999; font-size: 0.85rem;">Hệ thống AI phân tích chứng khoán Việt Nam & Quốc tế</p>
     </div>
@@ -2333,7 +2343,7 @@ if not is_english:
 else:
     st.markdown("""
     <div style="text-align: center; padding: 1.5rem; background: #f8f9fa; border-radius: 10px; margin-top: 2rem;">
-        <h4 style="color: #2a5298; margin-bottom: 0.5rem;">🇻🇳 DUONG AI TRADING PRO</h4>
+        <h4 style="color: #2a5298; margin-bottom: 0.5rem;">Design and Evaluation of Multi-Agent Architectures for Stock Price Prediction: A Vietnam Case Study</h4>
         <p style="color: #666; font-size: 0.9rem; margin-bottom: 0.5rem;">6 AI Agents • Gemini 2.0 • CrewAI • Real-time Data</p>
         <p style="color: #999; font-size: 0.85rem;">AI Stock Analysis for Vietnam & International Markets</p>
     </div>

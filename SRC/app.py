@@ -16,7 +16,7 @@ load_dotenv()
 
 # Cấu hình trang chuyên nghiệp
 st.set_page_config(
-    page_title="DUONG AI TRADING PRO",
+    page_title="Design and Evaluation of Multi-Agent Architectures for Stock Price Prediction: A Vietnam Case Study",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -1500,7 +1500,7 @@ st.markdown("""
     <div class="container-fluid">
         <div class="row align-items-center">
             <div class="col-12 text-center">
-                <h1 class="header-title mb-2">📈 DUONG AI TRADING PRO</h1>
+                <h1 class="header-title mb-2">Design and Evaluation of Multi-Agent Architectures for Stock Price Prediction: A Vietnam Case Study</h1>
                 <p class="header-subtitle mb-3">Hệ thống phân tích đầu tư chứng khoán thông minh với AI</p>
                 <div class="d-flex flex-wrap justify-content-center gap-2">
                     <span class="badge bg-light bg-opacity-25 text-white px-3 py-2">
@@ -3365,7 +3365,7 @@ with tab5:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; padding: 2rem; background: #f8f9fa; border-radius: 10px; margin-top: 2rem;">
-    <h4 style="color: #2a5298; margin-bottom: 1rem;">🇻🇳 DUONG AI TRADING PRO</h4>
+    <h4 style="color: #2a5298; margin-bottom: 1rem;">Design and Evaluation of Multi-Agent Architectures for Stock Price Prediction: A Vietnam Case Study</h4>
     <p style="color: #666; margin-bottom: 0.5rem;">Được hỗ trợ bởi 6 AI Agents • Google Gemini • CrewAI • Dữ liệu thời gian thực</p>
     <p style="color: #999; font-size: 0.9rem;">Hệ thống phân tích cổ phiếu chuyên nghiệp cho thị trường Việt Nam & Quốc tế</p>
     <div style="margin-top: 1rem;">
