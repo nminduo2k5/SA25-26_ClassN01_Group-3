@@ -83,7 +83,7 @@ def display_market_overview(vn_api, is_english=False, dark_mode=False):
         
         if vn_history and len(vn_history) > 0:
             chart_data = pd.DataFrame(vn_history)
-            st.line_chart(chart_data.set_index('date')['close'], height=180, use_container_width=True)
+            st.line_chart(chart_data['close'].values, height=180, use_container_width=True)
         else:
             st.line_chart(fake_chart_data(base=vn_val), height=180, use_container_width=True)
     
@@ -102,7 +102,7 @@ def display_market_overview(vn_api, is_english=False, dark_mode=False):
         
         if vn30_history and len(vn30_history) > 0:
             chart_data = pd.DataFrame(vn30_history)
-            st.line_chart(chart_data.set_index('date')['close'], height=180, use_container_width=True)
+            st.line_chart(chart_data['close'].values, height=180, use_container_width=True)
         else:
             st.line_chart(fake_chart_data(base=vn30_val), height=180, use_container_width=True)
     
@@ -121,7 +121,7 @@ def display_market_overview(vn_api, is_english=False, dark_mode=False):
         
         if hn_history and len(hn_history) > 0:
             chart_data = pd.DataFrame(hn_history)
-            st.line_chart(chart_data.set_index('date')['close'], height=180, use_container_width=True)
+            st.line_chart(chart_data['close'].values, height=180, use_container_width=True)
         else:
             st.line_chart(fake_chart_data(base=hn_val), height=180, use_container_width=True)
     
@@ -140,7 +140,7 @@ def display_market_overview(vn_api, is_english=False, dark_mode=False):
         
         if upcom_history and len(upcom_history) > 0:
             chart_data = pd.DataFrame(upcom_history)
-            st.line_chart(chart_data.set_index('date')['close'], height=180, use_container_width=True)
+            st.line_chart(chart_data['close'].values, height=180, use_container_width=True)
         else:
             st.line_chart(fake_chart_data(base=upcom_val), height=180, use_container_width=True)
     
